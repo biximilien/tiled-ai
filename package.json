@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/main.mjs && node --check src/tiled/actions.mjs && node --check src/tiled/map-reader.mjs && node --check src/core/validation.mjs"
+    "check": "node --check src/main.mjs && node --check src/tiled/actions.mjs && node --check src/tiled/map-reader.mjs && node --check src/tiled/edit-applier.mjs && node --check src/core/validation.mjs && node --check src/core/edit-protocol.mjs && node --check src/core/edit-validation.mjs && node --check src/core/fill-empty-planner.mjs"
   },
   "devDependencies": {
     "@mapeditor/tiled-api": "^1.12.0",

@@ -134,6 +134,7 @@ test("action registers beside Hello, logs JSON, and reports failures cleanly", (
   registerActions();
   assert.deepEqual(menus, [{ menu: "Map", items: [
     { action: "TiledAiHello" }, { action: "TiledAiInspectSelection" },
+    { action: "TiledAiFillEmptyCells" },
   ] }]);
   const action = actions.get("TiledAiInspectSelection");
   assert.ok(action);

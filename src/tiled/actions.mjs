@@ -1,5 +1,8 @@
 import { isTileMapAsset } from "../core/validation.mjs";
 import { readSelectionContext, SelectionError } from "./map-reader.mjs";
+import { EditError } from "../core/edit-protocol.mjs";
+import { planFillEmptyCells } from "../core/fill-empty-planner.mjs";
+import { applyEditPlan } from "./edit-applier.mjs";
 
 export function registerActions() {
   const action = tiled.registerAction("TiledAiHello", function () {
@@ -36,8 +39,31 @@ export function registerActions() {
   });
   inspectAction.text = "AI: Inspect Selection";
 
+  const fillAction = tiled.registerAction("TiledAiFillEmptyCells", function () {
+    try {
+      const asset = tiled.activeAsset;
+      const context = readSelectionContext(asset);
+      const map = /** @type {TileMap} */ (asset);
+      const layer = /** @type {TileLayer} */ (map.currentLayer);
+      const plan = planFillEmptyCells(context);
+      const count = applyEditPlan(plan, context, map, layer);
+      if (count === 0) tiled.alert("The selected area has no empty cells.");
+      else tiled.log(`Filled ${count} empty cells. Use Ctrl+Z to undo.`);
+    } catch (error) {
+      if (error instanceof SelectionError || error instanceof EditError) {
+        tiled.alert(error.message);
+        return;
+      }
+      const details = error instanceof Error ? `${error.message}\n${error.stack || ""}` : String(error);
+      tiled.log(`Tiled AI: Fill Empty Cells failed: ${details}`);
+      tiled.alert("Could not fill empty cells. See Tiled's Console for details.");
+    }
+  });
+  fillAction.text = "AI: Fill Empty Cells (Prototype)";
+
   tiled.extendMenu("Map", [
     { action: "TiledAiHello" },
     { action: "TiledAiInspectSelection" },
+    { action: "TiledAiFillEmptyCells" },
   ]);
 }
