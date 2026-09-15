@@ -42,3 +42,20 @@ test("CLI failures exit nonzero, use typed stderr, and never emit success JSON",
     assert.match(result.stderr, new RegExp(`^\\[${code}\\]`));
   }
 });
+
+test("CLI semantic catalog round trip preserves names and returns typed lookup errors", () => {
+  const request = {
+    ...plannerRequest(), instruction: "fill empty with FORÊT 世界",
+    tileCatalog: { schemaVersion: 1, tilesets: [{ name: "terrain", tiles: [
+      { tileId: 100, name: "Forêt 世界", description: "Herbe verte", tags: ["ground"] },
+    ] }] },
+  };
+  const result = run(JSON.stringify(request));
+  assert.equal(result.status, 0);
+  assert.equal(result.stderr, "");
+  assert.deepEqual(JSON.parse(result.stdout).plan.edits[0].tile, { tileset: "terrain", tileId: 100 });
+  const bad = run(JSON.stringify({ ...request, instruction: "fill empty with sand" }));
+  assert.notEqual(bad.status, 0);
+  assert.equal(bad.stdout, "");
+  assert.match(bad.stderr, /^\[UNKNOWN_TILE\]/);
+});

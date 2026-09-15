@@ -1,4 +1,5 @@
 import { routeRequest } from "./command-router.mjs";
+import { CatalogError } from "../../src/core/tile-catalog.mjs";
 import { PlannerError, PLANNER_LIMITS, validatePlannerResponse } from "../../src/core/planner-protocol.mjs";
 
 try {
@@ -20,7 +21,7 @@ try {
   }
   await new Promise((resolve, reject) => process.stdout.write(output + "\n", error => error ? reject(error) : resolve(undefined)));
 } catch (error) {
-  if (error instanceof PlannerError) {
+  if (error instanceof PlannerError || error instanceof CatalogError) {
     process.stderr.write(`[${error.code}] ${error.message}\n`);
   } else {
     process.stderr.write(`[INTERNAL_ERROR] ${error instanceof Error ? error.stack || error.message : String(error)}\n`);

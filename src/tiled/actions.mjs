@@ -4,6 +4,7 @@ import { EditError } from "../core/edit-protocol.mjs";
 import { planFillEmptyCells } from "../core/fill-empty-planner.mjs";
 import { applyEditPlan } from "./edit-applier.mjs";
 import { generateFromInstruction } from "./generate-action.mjs";
+import { buildTileCatalog, reportCatalog } from "./tile-catalog-reader.mjs";
 
 /** @param {string} [extensionFile] Startup main.mjs path, captured before callbacks. */
 export function registerActions(extensionFile = "") {
@@ -77,10 +78,25 @@ export function registerActions(extensionFile = "") {
   });
   generateAction.text = "AI: Generate… (Prototype)";
 
+  const catalogAction = tiled.registerAction("TiledAiInspectTileCatalog", function () {
+    try {
+      const result = buildTileCatalog(tiled.activeAsset);
+      const catalog = reportCatalog(result);
+      tiled.log(JSON.stringify(catalog, null, 2));
+      tiled.log(`Catalogued ${result.summary.annotated} tiles from ${result.summary.tilesets} tilesets. Ignored ${result.summary.ignored} unannotated tiles.`);
+    } catch (error) {
+      if (error instanceof SelectionError || error instanceof EditError) { tiled.alert(error.message); return; }
+      tiled.log(`Tiled AI: Inspect Tile Catalog failed: ${error instanceof Error ? error.message + "\n" + error.stack : String(error)}`);
+      tiled.alert("Could not inspect the tile catalog. See Tiled's Console for details.");
+    }
+  });
+  catalogAction.text = "AI: Inspect Tile Catalog";
+
   tiled.extendMenu("Map", [
     { action: "TiledAiHello" },
     { action: "TiledAiInspectSelection" },
     { action: "TiledAiFillEmptyCells" },
     { action: "TiledAiGenerate" },
+    { action: "TiledAiInspectTileCatalog" },
   ]);
 }

@@ -1,4 +1,4 @@
-import { EditError, requireSelectionContext } from "./edit-protocol.mjs";
+import { EditError, requireSelectionContext, requireTileReference } from "./edit-protocol.mjs";
 
 /** @param {unknown} context @returns {import('./edit-protocol.mjs').EditPlan} */
 export function planFillEmptyCells(context) {
@@ -20,7 +20,16 @@ export function planFillEmptyCells(context) {
     (a.tile.tileset < b.tile.tileset ? -1 : a.tile.tileset > b.tile.tileset ? 1 : 0) ||
     a.tile.tileId - b.tile.tileId);
   if (!candidates.length) throw new EditError("No source tile exists in the selection.");
+  return planFillWithTile(context, candidates[0].tile);
+}
 
+/** Shared empty-cell edit construction for frequency and semantic selection.
+ * @param {unknown} context @param {unknown} source
+ * @returns {import('./edit-protocol.mjs').EditPlan}
+ */
+export function planFillWithTile(context, source) {
+  requireSelectionContext(context);
+  requireTileReference(source);
   /** @type {import('./edit-protocol.mjs').EditPlan} */
   const plan = {
     schemaVersion: 1,
@@ -33,7 +42,6 @@ export function planFillEmptyCells(context) {
     },
     edits: [],
   };
-  const source = candidates[0].tile;
   context.cells.forEach((row, y) => row.forEach((tile, x) => {
     if (tile === null) plan.edits.push({
       operation: "setTile",

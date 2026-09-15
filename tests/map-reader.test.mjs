@@ -136,6 +136,7 @@ test("action registers beside Hello, logs JSON, and reports failures cleanly", (
     { action: "TiledAiHello" }, { action: "TiledAiInspectSelection" },
     { action: "TiledAiFillEmptyCells" },
     { action: "TiledAiGenerate" },
+    { action: "TiledAiInspectTileCatalog" },
   ] }]);
   const action = actions.get("TiledAiInspectSelection");
   assert.ok(action);

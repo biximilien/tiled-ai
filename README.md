@@ -9,6 +9,8 @@ Inspection is read-only. No AI integration is implemented.
 fill selected empty cells with the most common tile in the selection.
 **Map → AI: Generate… (Prototype)** sends a supported instruction and selection
 to a one-shot local Node planner, then asks before applying its validated edits.
+Tiles annotated with `ai_name` can now be selected by exact semantic name using
+`fill empty with grass` or `fill empty with terrain:grass`.
 
 ## Requirements
 
@@ -171,6 +173,10 @@ and narrows `Layer` to `TileLayer` after checking `isTileLayer`.
 - `src/core/edit-validation.mjs`: whole-plan validation against the inspected context.
 - `src/tiled/edit-applier.mjs`: live target checks, tile resolution, and one atomic edit.
 - `src/core/planner-protocol.mjs`: shared request/response validation and limits.
+- `src/core/tile-metadata.mjs`: annotation normalization and catalog limits.
+- `src/core/tile-catalog.mjs`: catalog validation and exact semantic lookup.
+- `src/core/utf8.mjs`: shared UTF-8 byte counting for payload limits.
+- `src/tiled/tile-catalog-reader.mjs`: explicit tile property reads and diagnostics.
 - `src/tiled/planner-process.mjs`: direct Node startup, UTF-8 transport, and cleanup.
 - `src/tiled/generate-action.mjs`: prompt, snapshot checks, and confirmation.
 - `planner/src/cli.mjs`: one-shot Node stdin/stdout entry point.
@@ -277,6 +283,8 @@ The Console command is `tiled.trigger("TiledAiGenerate")`.
 | `fill empty cells` | Fill empty cells with the most common selected tile.      |
 | `fill empty`       | Exact alias for `fill empty cells`.                       |
 | `noop`             | Propose no changes, even for an entirely empty selection. |
+| `fill empty with <name>` | Fill empty cells with one uniquely named catalog tile. |
+| `fill empty with <tileset>:<name>` | Select a catalog tile by its qualified name. |
 
 Case and surrounding whitespace are normalized. Empty input cancels without
 starting a process. Other instructions fail explicitly: this is a deterministic
@@ -333,7 +341,10 @@ Success requires exit code 0 and exactly one stdout JSON response:
 { schemaVersion: 1, requestId, plan }
 ```
 
-`context` and `plan` are the existing versioned contracts. The opaque request ID
+`context` and `plan` are the existing versioned contracts. Semantic requests
+also include the optional `tileCatalog` field described below; the outer request
+schema remains version 1. Other commands omit the catalog, so malformed tile
+annotations do not block those commands. The opaque request ID
 is a timestamp plus an increasing counter and must match exactly. It is only
 for correlation. The CLI emits no banners or logs on stdout. Failures exit
 nonzero and report `[CODE] message` on stderr, distinguishing malformed JSON,
@@ -396,6 +407,142 @@ disposable map and the existing junction installation:
 11. Invoke the normal action again without reinstalling the extension. If
     convenient, use non-ASCII tileset names and confirm the round trip.
 
+## Semantic tile catalog (iteration 4)
+
+Annotations give the deterministic planner names such as `grass`, `water`, or
+`tree`. They do not enable fuzzy matching, automatic classification, or an AI
+model. Edit plans still use the existing `{ tileset, tileId }` references and
+pass through the same validator, confirmation, stale-state checks, and executor.
+
+### Annotate individual tiles
+
+Open a tileset in Tiled's tileset editor, select a tile, and use the **Properties**
+view's **Add Property** button to add these custom properties. Choose **string**
+as the Tiled property type for each one:
+
+| Property | Required? | Example |
+| --- | --- | --- |
+| `ai_name` | Yes, for catalog inclusion | `grass` |
+| `ai_description` | No | `Plain walkable grass` |
+| `ai_tags` | No | `ground, outdoor, walkable` |
+
+Set properties on the tile itself, not on the tileset or map. Save the tileset
+when you want to retain your annotations. The plugin never changes properties.
+It reads explicitly assigned values with `tile.property()`; inherited class
+defaults are intentionally excluded. Tiles without `ai_name` are ignored by
+semantic lookup but remain usable by the existing frequency-based fill.
+
+Return to your map and choose **Map → AI: Inspect Tile Catalog**. The Console
+shows pretty-printed JSON and annotated/ignored counts. Empty catalogs explain
+how to add `ai_name`. Inspection never changes the map or tilesets.
+
+```json
+{
+  "schemaVersion": 1,
+  "tilesets": [
+    {
+      "name": "terrain",
+      "tiles": [
+        {
+          "tileId": 4,
+          "name": "grass",
+          "description": "Plain walkable grass",
+          "tags": ["ground", "outdoor", "walkable"]
+        }
+      ]
+    }
+  ]
+}
+```
+
+The adapter enumerates `Tileset.tiles`, so sparse image-collection IDs work.
+Tilesets are ordered by their display name using locale-independent UTF-16
+ordering, and tiles by numeric local ID. Only the three annotation properties
+are read; source paths, image paths, and arbitrary custom properties are excluded.
+
+### Semantic commands and ambiguity
+
+Select a rectangle on a writable tile layer, invoke **AI: Generate… (Prototype)**,
+and enter `fill empty with grass`. Unlike frequency-based fill, this works even
+when the selection is entirely empty: the source tile comes from the catalog.
+Only empty cells are changed, after confirmation, in one undoable edit.
+
+- Names are trimmed and their display casing is preserved. Lookup uses
+  JavaScript Unicode `toLowerCase()` without accent removal or transliteration.
+- `fill empty with Terrain:Grass` performs exact case-insensitive qualified lookup.
+  The actual tileset name is preserved in the resulting edit reference.
+- Duplicate normalized tileset names invalidate the catalog, even if one has
+  no annotated tiles. Duplicate semantic names within a tileset also invalidate it.
+- The same name across different tilesets is allowed. Unqualified lookup then
+  fails with qualified alternatives such as `terrain:grass` and `decor:grass`.
+- Names containing `:` are unsupported because it separates the qualifier.
+  Tileset names containing `:` also cannot be used in this catalog.
+- Unknown names report up to ten deterministically sorted qualified choices.
+  There is no similarity scoring, quoting/escaping syntax, alias inference,
+  partial matching, or matching against tags/descriptions.
+
+Descriptions are trimmed, omitted when empty, and retain internal whitespace.
+Tags are split on commas, trimmed, and stripped of empty segments. Duplicate
+tags are compared case-insensitively; the lexicographically smallest original
+display variant is kept. Tags are sorted by their lowercase key.
+
+### Limits and invalid annotations
+
+`src/core/tile-metadata.mjs` centralizes these limits. Text lengths count trimmed
+JavaScript UTF-16 code units (an emoji may count as two); metadata is never
+silently truncated.
+
+| Limit | Value |
+| --- | --- |
+| `ai_name` | 80 code units |
+| `ai_description` | 500 code units |
+| Tags per tile | 20 distinct normalized tags |
+| Each tag | 50 code units |
+| Annotated tiles across the map | 500 |
+| Serialized catalog | 512 KiB of UTF-8 |
+| Total serialized request, including catalog | Existing 1 MiB limit |
+
+Malformed values produce structured Console diagnostics identifying the tileset,
+tile ID, property, code, and message. Errors block semantic generation and return
+no usable catalog; size/count violations never send a truncated catalog.
+Diagnostics stay local and are not included in planner requests. Fix annotations
+and run inspection again. Non-semantic commands continue to work without a catalog.
+
+The catalog is rebuilt for each inspection or semantic request and is not cached
+or written to disk. The current prototype sends all annotated tiles from all
+referenced tilesets; it has no relevance filtering or incremental updates.
+Before a model integration, evaluate a bounded relevance policy for larger
+catalogs without silently changing the meaning of names.
+
+### Verify in Tiled
+
+Use a disposable map with a referenced tileset named `terrain`:
+
+1. Annotate three different tiles with `ai_name` values `grass`, `dirt`, and `water`.
+   Give grass/dirt `ground, outdoor, walkable` tags and water
+   `liquid, outdoor, unwalkable` tags.
+2. Return to the map, run **AI: Inspect Tile Catalog**, and check names, local
+   IDs, normalized tags, and ignored counts in the Console.
+3. Select a rectangle with empty cells, generate `fill empty with grass`, and
+   confirm. Check that populated cells remain untouched; undo once, then redo.
+4. Repeat with `fill empty with TERRAIN:GRASS`, then with an entirely empty area.
+5. Annotate a tile `grass` in another tileset. Verify unqualified lookup is
+   ambiguous and `terrain:grass` still succeeds.
+6. Add a second `grass` inside `terrain` and verify catalog rejection. Remove
+   the duplicate, then give a tile numeric `ai_tags` and check its diagnostic.
+7. Confirm `fill empty cells`, `fill empty`, and `noop` still behave as before.
+8. Restore valid metadata and try an accented name such as `Forêt`.
+
+Run the existing `npm test`, `npm run check`, and type-check command above for
+automated verification. Tests cover normalization, limits, deterministic ordering,
+ambiguity, request size, catalog inspection, confirmation paths, and real CLI
+round trips. A Tiled 1.11.2 headless smoke check additionally verified explicit
+property reads, sparse IDs, Unicode process transport, semantic application to
+real tile layers, and ambiguity/duplicate rejection. No new API adaptation was
+needed, and the Process destructor cleanup fix remains in place.
+**Catalog UI inspection, manual annotation, confirmation, and one-step undo/redo
+have not been manually verified for this iteration.**
+
 ## Planned direction
 
 - **v0.1–v0.2 (implemented in iteration 1):** inspect one rectangular selection
@@ -404,6 +551,7 @@ disposable map and the existing junction installation:
   plans and fill empty cells through `TileLayer.edit()` with one undo step.
 - **Iteration 3 (implemented):** local deterministic planner CLI over stdin/stdout,
   with response validation and confirmation.
+- **Iteration 4 (implemented):** semantic tile catalog and exact named-tile fills.
 - **Future backend:** replace deterministic interpretation behind the process boundary.
 - **v0.6:** selection-aware generation and preview.
 

@@ -1,5 +1,8 @@
 import { EditError, requireObject, requireRectangle, requireSelectionContext } from "./edit-protocol.mjs";
 import { validateEditPlan } from "./edit-validation.mjs";
+import { requireTileCatalog } from "./tile-catalog.mjs";
+import { utf8Bytes } from "./utf8.mjs";
+export { utf8Bytes } from "./utf8.mjs";
 
 export const PLANNER_LIMITS = Object.freeze({
   instructionCharacters: 2000,
@@ -16,28 +19,13 @@ export class PlannerError extends EditError {
   constructor(code, message) { super(message); this.code = code; }
 }
 
-/** UTF-8 byte count without Node Buffer or browser TextEncoder.
- * @param {string} text
- */
-export function utf8Bytes(text) {
-  let bytes = 0;
-  for (let i = 0; i < text.length; i++) {
-    const code = text.charCodeAt(i);
-    if (code < 0x80) bytes++;
-    else if (code < 0x800) bytes += 2;
-    else if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length &&
-      text.charCodeAt(i + 1) >= 0xdc00 && text.charCodeAt(i + 1) <= 0xdfff) {
-      bytes += 4; i++;
-    } else bytes += 3;
-  }
-  return bytes;
-}
-
-/** @typedef {{schemaVersion: number, requestId: string, instruction: string, context: import('./edit-protocol.mjs').SelectionContext}} PlannerRequest */
+/** @typedef {{schemaVersion: number, requestId: string, instruction: string, context: import('./edit-protocol.mjs').SelectionContext, tileCatalog?: import('./tile-catalog.mjs').TileCatalog}} PlannerRequest */
 /** @param {unknown} request @returns {asserts request is PlannerRequest} */
 export function requirePlannerRequest(request) {
   try {
-    requireObject(request, ["schemaVersion", "requestId", "instruction", "context"], "Request");
+    const keys = ["schemaVersion", "requestId", "instruction", "context"];
+    if (request && Object.prototype.hasOwnProperty.call(request, "tileCatalog")) keys.push("tileCatalog");
+    requireObject(request, keys, "Request");
   } catch (error) {
     throw new PlannerError("INVALID_REQUEST", error instanceof Error ? error.message : String(error));
   }
@@ -57,6 +45,7 @@ export function requirePlannerRequest(request) {
   } catch (error) {
     throw new PlannerError("INVALID_CONTEXT", error instanceof Error ? error.message : String(error));
   }
+  if (Object.prototype.hasOwnProperty.call(request, "tileCatalog")) requireTileCatalog(request.tileCatalog);
 }
 
 /** @param {PlannerRequest} request */

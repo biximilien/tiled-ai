@@ -11,7 +11,9 @@ import { plannerHost } from "./helpers/planner-host.mjs";
 function fixture(t) {
   /** @type {string[]} */
   const calls = [];
-  const tile = { id: 4, tileset: { name: "terrain" } };
+  /** @type {Record<string, unknown>} */
+  const metadata = {};
+  const tile = { id: 4, tileset: { name: "terrain" }, property: (/** @type {string} */ key) => metadata[key] };
   /** @type {(typeof tile | null)[]} */
   const cells = [tile, null, null];
   const layer = {
@@ -41,6 +43,7 @@ function fixture(t) {
   };
   const tileset = {
     name: "terrain",
+    tiles: [tile],
     /** @param {number} id */
     tile(id) { calls.push(`resolve:${id}`); return id === 4 ? tile : null; },
   };
@@ -82,7 +85,7 @@ function fixture(t) {
   });
   const context = readSelectionContext(map);
   const plan = planFillEmptyCells(context);
-  return { calls, cells, tile, layer, data, map, target, context, plan, api, selection, actions, alerts, logs, confirmations };
+  return { calls, cells, tile, layer, data, map, target, context, plan, api, selection, actions, alerts, logs, confirmations, metadata };
 }
 
 test("adapter resolves everything before one edit and one apply", t => {
@@ -220,4 +223,51 @@ test("Generate caps selection before reading cells or prompting", t => {
   f.layer.tileAt = () => { throw new Error("should not read cells"); };
   assert.throws(() => generateFromInstruction("main.mjs"), /4,096/);
   assert.deepEqual(events, []);
+});
+
+test("semantic Generate includes catalog only, validates and confirms ordinary edits", t => {
+  const f = fixture(t);
+  const host = plannerHost(t);
+  f.metadata.ai_name = " Grass ";
+  f.metadata.ai_tags = "ground, outdoor";
+  f.api.prompt = () => "fill empty with terrain:grass";
+  generateFromInstruction("main.mjs");
+  assert.ok(host.state.request);
+  assert.deepEqual(host.state.request.tileCatalog, {
+    schemaVersion: 1, tilesets: [{ name: "terrain", tiles: [{ tileId: 4, name: "Grass", tags: ["ground", "outdoor"] }] }],
+  });
+  assert.ok(!("diagnostics" in host.state.request));
+  assert.deepEqual(f.confirmations, ["Apply 2 tile edits?"]);
+  assert.equal(f.calls.filter(call => call === "apply").length, 1);
+});
+
+test("bad metadata blocks semantic startup but does not break old commands", t => {
+  const f = fixture(t);
+  const host = plannerHost(t);
+  f.metadata.ai_name = "Grass";
+  f.metadata.ai_tags = 42;
+  f.api.prompt = () => "fill empty with grass";
+  assert.throws(() => generateFromInstruction("main.mjs"), /terrain tile 4 ai_tags/);
+  assert.deepEqual(host.events, []);
+  assert.deepEqual(f.confirmations, []);
+  f.api.prompt = () => "noop";
+  generateFromInstruction("main.mjs");
+  assert.ok(host.state.request);
+  assert.ok(!("tileCatalog" in host.state.request));
+  assert.ok(!f.calls.includes("edit"));
+});
+
+test("catalog inspection logs JSON and counts without edits, and explains an empty catalog", t => {
+  const f = fixture(t);
+  registerActions("main.mjs");
+  const action = f.actions.get("TiledAiInspectTileCatalog");
+  assert.ok(action);
+  action.invoke();
+  assert.match(f.logs[0], /Add a string ai_name/);
+  f.logs.length = 0;
+  f.metadata.ai_name = "Grass";
+  action.invoke();
+  assert.equal(JSON.parse(f.logs[0]).tilesets[0].tiles[0].name, "Grass");
+  assert.match(f.logs[1], /Catalogued 1 tiles from 1 tilesets. Ignored 0/);
+  assert.deepEqual(f.calls, []);
 });
