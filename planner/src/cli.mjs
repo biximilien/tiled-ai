@@ -1,4 +1,4 @@
-import { routeRequest } from "./command-router.mjs";
+import { planRequest } from "./provider-router.mjs";
 import { CatalogError } from "../../src/core/tile-catalog.mjs";
 import { PlannerError, PLANNER_LIMITS, validatePlannerResponse } from "../../src/core/planner-protocol.mjs";
 
@@ -13,7 +13,7 @@ try {
   let request;
   try { request = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
   catch { throw new PlannerError("MALFORMED_JSON", "Request must be exactly one JSON document."); }
-  const response = routeRequest(request);
+  const response = await planRequest(request, process.env);
   validatePlannerResponse(response, request);
   const output = JSON.stringify(response);
   if (Buffer.byteLength(output, "utf8") > PLANNER_LIMITS.responseBytes) {
@@ -24,7 +24,7 @@ try {
   if (error instanceof PlannerError || error instanceof CatalogError) {
     process.stderr.write(`[${error.code}] ${error.message}\n`);
   } else {
-    process.stderr.write(`[INTERNAL_ERROR] ${error instanceof Error ? error.stack || error.message : String(error)}\n`);
+    process.stderr.write("[INTERNAL_ERROR] Local planner failed unexpectedly. Check the planner installation.\n");
   }
   process.exitCode = 1;
 }

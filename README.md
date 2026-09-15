@@ -4,7 +4,8 @@ A prototype Tiled extension intended to evolve into an AI-assisted map editing
 tool. Currently, **Map → AI: Hello** displays the active tile map's dimensions
 (in tiles), or asks you to open a tile map. **Map → AI: Inspect Selection** logs
 a versioned JSON context for the active tile layer's rectangular tile selection.
-Inspection is read-only. No AI integration is implemented.
+Inspection is read-only. Optional OpenAI generation is available; deterministic
+planning remains the default and makes no network requests.
 **Map → AI: Fill Empty Cells (Prototype)** now uses a deterministic planner to
 fill selected empty cells with the most common tile in the selection.
 **Map → AI: Generate… (Prototype)** sends a supported instruction and selection
@@ -24,6 +25,7 @@ Clone this repository, open it in VS Code, and run:
 
 ```powershell
 npm install
+npm ci --prefix planner
 ```
 
 The official `@mapeditor/tiled-api` development dependency supplies Tiled API
@@ -188,7 +190,8 @@ and narrows `Layer` to `TileLayer` after checking `isTileLayer`.
 
 Tiled runs the extension in its own JavaScript environment, not Node.js.
 Runtime code must not assume `fs`, `path`, `process`, `Buffer`, `fetch`, or
-`require` exist. All package dependencies are for development only.
+`require` exist. Root dependencies are development-only; `planner/` owns the
+OpenAI SDK and Zod runtime dependencies, loaded exclusively inside Node.
 
 Edits go through Tiled's scripting API, including undo/redo. The planner is an
 untrusted producer of plain commands, the validator checks the whole plan,
@@ -269,6 +272,9 @@ exception (and a possible null result) into a precise validation failure;
 unexpected exceptions still reach diagnostic logging.
 
 ## Generate… (Prototype): local planner process
+
+This section describes the default **deterministic** provider. For natural-language
+generation, use [OpenAI generation](#openai-generation-iteration-5) below.
 
 1. Open a map, select a writable tile layer, and select a rectangle.
 2. Choose **Map → AI: Generate… (Prototype)**.
@@ -372,9 +378,10 @@ throws if it was already closed. This avoids spurious errors on later Generate
 calls while still stopping timed-out children promptly.
 The synchronous call can block the editor briefly (up to the timeout plus
 cleanup). Qt buffers child output until it is read, so the response cap is not
-a hard bound on Qt's internal buffer memory. Before real model calls, replace
-this synchronous prototype with cancellable asynchronous transport and bounded
-streaming output. No model, network service, credentials, or SDK is used here.
+a hard bound on Qt's internal buffer memory. Cancellable asynchronous transport
+and bounded streaming output are planned for the next iteration.
+Deterministic mode uses no model, network service, credentials,
+or SDK. OpenAI mode uses the separate limits and setup below.
 
 ### Windows verification
 
@@ -543,6 +550,136 @@ needed, and the Process destructor cleanup fix remains in place.
 **Catalog UI inspection, manual annotation, confirmation, and one-step undo/redo
 have not been manually verified for this iteration.**
 
+## OpenAI generation (iteration 5)
+
+The default is `TILED_AI_PROVIDER=deterministic`. It preserves the commands above
+and never contacts OpenAI. Set `TILED_AI_PROVIDER=openai` to use natural-language
+instructions. Unknown provider values fail; OpenAI mode requires both
+`OPENAI_API_KEY` and an explicit `OPENAI_MODEL`. There is no default model.
+Choose a model available to your account that supports Responses Structured Outputs.
+
+### Windows configuration
+
+Install the isolated Node planner dependencies:
+
+```powershell
+npm ci --prefix planner
+```
+
+Close Tiled, then launch it from a PowerShell terminal with the configuration:
+
+```powershell
+$env:TILED_AI_PROVIDER = 'openai'
+$env:OPENAI_API_KEY = 'YOUR_OPENAI_API_KEY'
+$env:OPENAI_MODEL = 'YOUR_RESPONSES_STRUCTURED_OUTPUTS_MODEL'
+& 'C:\Program Files\Tiled\tiled.exe'
+```
+
+Replace both placeholders locally. Launching a new window while an existing Tiled
+process is running may reuse that process's old environment. Fully exit first.
+The key is read only by Node from its inherited environment; it is never added
+to the Tiled request, process arguments, or diagnostics. `.env.example` is a
+reference template; **`.env` files are not automatically loaded** and are ignored
+by Git. Return to local mode by setting `$env:TILED_AI_PROVIDER = 'deterministic'`
+and restarting Tiled.
+
+### Usage and limits
+
+Annotate usable tiles with `ai_name` (for example `grass` and `water` in a tileset
+named `terrain`). Optional `ai_description` and `ai_tags` help describe their
+meaning. Check **Map → AI: Inspect Tile Catalog**. Then select a rectangle on a
+writable tile layer and choose **Map → AI: Generate… (Prototype)**.
+Enter, for example, `Create a small pond surrounded by grass.`
+
+**Tiled may be unresponsive during generation for up to 30 seconds, plus brief
+process cleanup.** This iteration uses the existing synchronous bridge.
+
+| Model-mode limit | Value |
+| --- | --- |
+| Selected cells / proposed edits | 256 / 256 |
+| Summary / reason length | 300 / 500 UTF-16 code units |
+| API attempts | 1, automatic retries disabled |
+| API timeout / Tiled process wait | 30 seconds each (the process wait also includes startup) |
+
+The existing 2,000-character instruction and 1 MiB transport limits still apply.
+Limits live in `src/core/model-limits.mjs`. Deterministic mode retains its
+4,096-cell cap and 5-second process wait.
+
+The model receives the instruction, selection width/height, occupied/empty cell
+matrix, and catalog names/descriptions/tags. It receives no map-space origin,
+numeric tile IDs, layer details, file paths, or images. This information is sent
+to OpenAI in model mode. Stable system rules are separate from untrusted task
+and catalog data. The SDK request uses `store: false` and no tools.
+
+The official SDK uses `responses.parse` and `zodTextFormat`, following the
+[OpenAI Structured Outputs guide](https://developers.openai.com/api/docs/guides/structured-outputs).
+The dynamic, closed schema allows only canonical qualified names such as
+`terrain:grass`. Its result is `{status, summary, reason, edits}` with relative
+`{dx, dy, tile}` entries. Independent validation checks status invariants, bounds,
+occupied cells, duplicates, counts, names and safe arithmetic. A pure compiler
+resolves semantic names into the existing numeric plan; the existing validator
+runs again in Node and Tiled. No second map-editing path is introduced.
+
+The response preserves schema version and request ID and adds optional
+`metadata: {status, summary, reason}` outside the executable plan. A planned
+result must have at least one edit and a null reason. A `cannot_plan` result
+must have a reason and zero edits; this is also how the model reports that no
+changes are needed. Such results display a read-only explanation.
+
+For planned results, review the plain-text summary, edit count, and layer name,
+then choose **Apply** or **Cancel**. Apply rechecks the live map and uses one
+`TileLayerEdit`; **Ctrl+Z once** should undo the entire operation. Cancel,
+refusal, incomplete output, configuration/network/timeout failures, and rejected
+plans create no edit. Errors use conservative messages without raw provider
+responses, prompts, credentials, or headers. Model prose is never interpreted
+as HTML or used to control execution.
+
+### Manual acceptance test (uses the paid API)
+
+1. Configure OpenAI mode above and open a disposable map with `terrain:grass`
+   and `terrain:water` in its valid catalog.
+2. Select an empty 8 × 8 rectangle on a writable tile layer.
+3. Choose **Map → AI: Generate… (Prototype)** and enter
+   `Create a small pond surrounded by grass.`
+4. Check the summary, count, and layer; choose **Cancel**. Verify no map change.
+5. Run again and choose **Apply**. Verify only selected empty cells change and
+   every placed tile comes from the catalog. Repeat with an occupied cell to
+   check it remains untouched.
+6. Press **Ctrl+Z once** and verify the entire generation disappears.
+7. Run again on the same selection to check repeated actions and process cleanup.
+8. Disconnect the network, or restart with invalid model configuration, and
+   verify a clear error with no map changes.
+9. Restart in deterministic mode and repeat `fill empty with terrain:grass`.
+
+Normal tests are entirely offline: an injected model adapter and a fake HTTP
+transport exercise the installed SDK. CLI tests explicitly force deterministic
+mode regardless of your environment. No live smoke test is included; the steps
+above are the explicit live verification path.
+
+### Implementation and verification
+
+- `planner/src/provider-config.mjs` and `provider-router.mjs`: configuration and routing.
+- `planner/src/openai-adapter.mjs`: Responses SDK, deadline, refusal and safe errors.
+- `planner/src/model-plan.mjs`: semantic schema, prompt projection, validation and compilation.
+- `src/core/model-limits.mjs` and `planner-protocol.mjs`: limits and response metadata validation.
+- `src/tiled/planner-process.mjs`, `generate-action.mjs`, and `plan-dialog.mjs`:
+  provider-aware limits/catalog collection, transport and plain-text confirmation.
+- `planner/test/model.test.mjs` plus existing process/action tests: offline regression coverage.
+- `planner/package.json` and lockfile: Node-only SDK/schema dependencies;
+  `scripts/check.mjs` skips dependency directories.
+
+Baseline: 94 tests; iteration 5: **134 offline tests passing**. Syntax, type, and
+diff whitespace checks also pass. Verification commands: `npm test`, `npm run check`,
+`npx --yes --package typescript tsc --project jsconfig.json`, and `git diff --check`.
+Installed Tiled 1.11.2 successfully imported the new runtime modules, preserved
+literal HTML-like text in a read-only dialog field, and survived repeated
+environment-reader wrapper garbage collection. Tiled 1.11 requires an explicit
+empty label argument for `Dialog.addTextEdit`, despite newer optional typings.
+**Live API generation, interactive Apply/Cancel, and editor undo still need the
+manual acceptance test above.** No credentials were accessed or API request made
+during implementation. Terrain transitions and visual tile interpretation are
+outside this iteration.
+
 ## Planned direction
 
 - **v0.1–v0.2 (implemented in iteration 1):** inspect one rectangular selection
@@ -552,12 +689,13 @@ have not been manually verified for this iteration.**
 - **Iteration 3 (implemented):** local deterministic planner CLI over stdin/stdout,
   with response validation and confirmation.
 - **Iteration 4 (implemented):** semantic tile catalog and exact named-tile fills.
-- **Future backend:** replace deterministic interpretation behind the process boundary.
+- **Iteration 5 (implemented):** optional OpenAI semantic planning behind the process boundary.
+- **Next:** non-blocking generation with cancellation if network latency is disruptive.
 - **v0.6:** selection-aware generation and preview.
 
-The extension will stay thin. A future local planner will handle prompts,
-model access, and planning; the extension will inspect maps, validate edits,
-apply changes, and present previews. No HTTP client or long-running service is needed.
+The extension stays thin. The local Node planner handles prompts, model access,
+and planning; the extension inspects maps, validates edits, and applies changes.
+No HTTP client runs inside Tiled and no long-running service is needed.
 
 ## License
 

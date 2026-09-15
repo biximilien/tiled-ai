@@ -5,6 +5,15 @@ import { plannerRequest } from "./helpers/planner-fixture.mjs";
 import { runPlanner } from "../src/tiled/planner-process.mjs";
 import { PLANNER_LIMITS } from "../src/core/planner-protocol.mjs";
 
+test("model process gets a 30-second cap and is terminated on timeout", t => {
+  const { state, events, collectGarbage } = plannerHost(t);
+  state.provider = "openai";
+  state.waits = [false, false, true];
+  assert.throws(() => runPlanner(plannerRequest(), "main.mjs"), /30 seconds/);
+  collectGarbage();
+  assert.deepEqual(events.slice(-6), ["wait:30000", "terminate", "wait:250", "kill", "wait:250", "close"]);
+});
+
 test("repeated requests survive Tiled destructor cleanup between calls", t => {
   const host = plannerHost(t);
   const request = plannerRequest();

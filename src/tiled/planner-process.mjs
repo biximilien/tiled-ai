@@ -1,6 +1,13 @@
 import {
-  PlannerError, PLANNER_LIMITS, serializePlannerRequest, utf8Bytes, validatePlannerResponse,
+  PlannerError, PLANNER_LIMITS, serializePlannerRequest, utf8Bytes, validatePlannerResponse, responseMetadata,
 } from "../core/planner-protocol.mjs";
+import { MODEL_LIMITS, plannerProvider } from "../core/model-limits.mjs";
+
+// Read only a non-secret provider switch. Native GC owns this wrapper, too.
+export function usesModelPlanner() {
+  try { return plannerProvider(new Process().getEnv("TILED_AI_PROVIDER")) !== "deterministic"; }
+  catch (error) { throw new PlannerError("CONFIGURATION", "Unsupported TILED_AI_PROVIDER. Use deterministic or openai."); }
+}
 
 // Fixed Node-only bootstrap, never composed from instructions or map data.
 // Qt 6.8.1 canonicalPath leaves Windows directory junctions unresolved.
@@ -26,8 +33,9 @@ export function plannerLaunchArguments(extensionFile) {
   return ["--input-type=module", "--eval", NODE_BOOTSTRAP, canonical];
 }
 
-/** @param {import('../core/planner-protocol.mjs').PlannerRequest} request @param {string} extensionFile */
-export function runPlanner(request, extensionFile) {
+/** @param {import('../core/planner-protocol.mjs').PlannerRequest} request @param {string} extensionFile
+ * @param {(metadata: import('../core/planner-protocol.mjs').PlanMetadata) => void} [onMetadata] */
+export function runPlanner(request, extensionFile, onMetadata) {
   const input = serializePlannerRequest(request);
   const args = plannerLaunchArguments(extensionFile);
   const child = new Process();
@@ -35,14 +43,15 @@ export function runPlanner(request, extensionFile) {
   try {
     child.codec = "UTF-8";
     const executable = child.getEnv("TILED_AI_NODE") || "node";
+    const timeout = plannerProvider(child.getEnv("TILED_AI_PROVIDER")) === "deterministic" ? PLANNER_LIMITS.timeoutMs : MODEL_LIMITS.timeoutMs;
     if (!child.start(executable, args)) {
       throw new PlannerError("START_FAILURE", "Could not start the local planner. Check Node on PATH or TILED_AI_NODE, then restart Tiled.");
     }
     running = true;
     child.write(input);
     child.closeWriteChannel();
-    if (!child.waitForFinished(PLANNER_LIMITS.timeoutMs)) {
-      throw new PlannerError("TIMEOUT", "The local planner timed out after 5 seconds.");
+    if (!child.waitForFinished(timeout)) {
+      throw new PlannerError("TIMEOUT", `The local planner timed out after ${timeout / 1000} seconds.`);
     }
     running = false;
     const stdout = child.readStdOut();
@@ -56,7 +65,9 @@ export function runPlanner(request, extensionFile) {
     let response;
     try { response = JSON.parse(stdout); }
     catch (error) { throw new PlannerError("INVALID_RESPONSE", "Local planner did not return one valid JSON document."); }
-    return validatePlannerResponse(response, request);
+    const plan = validatePlannerResponse(response, request);
+    if (onMetadata && Object.prototype.hasOwnProperty.call(response, "metadata")) onMetadata(responseMetadata(response.metadata));
+    return plan;
   } finally {
     if (running) {
       child.terminate();

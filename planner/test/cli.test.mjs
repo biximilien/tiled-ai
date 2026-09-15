@@ -9,6 +9,7 @@ import { PLANNER_LIMITS, validatePlannerResponse } from "../../src/core/planner-
 function run(input) {
   const result = spawnSync(process.execPath, [fileURLToPath(new URL("../src/cli.mjs", import.meta.url))], {
     input, encoding: "utf8", timeout: 5000, maxBuffer: 2 * 1024 * 1024, windowsHide: true,
+    env: { ...process.env, TILED_AI_PROVIDER: "deterministic", OPENAI_API_KEY: "", OPENAI_MODEL: "" },
   });
   assert.ifError(result.error);
   return result;

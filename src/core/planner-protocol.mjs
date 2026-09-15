@@ -2,6 +2,7 @@ import { EditError, requireObject, requireRectangle, requireSelectionContext } f
 import { validateEditPlan } from "./edit-validation.mjs";
 import { requireTileCatalog } from "./tile-catalog.mjs";
 import { utf8Bytes } from "./utf8.mjs";
+import { MODEL_LIMITS } from "./model-limits.mjs";
 export { utf8Bytes } from "./utf8.mjs";
 
 export const PLANNER_LIMITS = Object.freeze({
@@ -60,11 +61,37 @@ export function serializePlannerRequest(request) {
 export function validatePlannerResponse(response, request) {
   requirePlannerRequest(request);
   try {
-    requireObject(response, ["schemaVersion", "requestId", "plan"], "Response");
+    const keys = ["schemaVersion", "requestId", "plan"];
+    if (response && Object.prototype.hasOwnProperty.call(response, "metadata")) keys.push("metadata");
+    requireObject(response, keys, "Response");
     if (response.schemaVersion !== 1) throw new Error("Unsupported response schema version.");
     if (response.requestId !== request.requestId) throw new Error("Planner response request ID does not match.");
   } catch (error) {
     throw new PlannerError("INVALID_RESPONSE", error instanceof Error ? error.message : String(error));
   }
-  return validateEditPlan(response.plan, request.context);
+  const plan = validateEditPlan(response.plan, request.context);
+  if (Object.prototype.hasOwnProperty.call(response, "metadata")) {
+    const metadata = responseMetadata(response.metadata);
+    if ((metadata.status === "cannot_plan" && plan.edits.length !== 0) ||
+        (metadata.status === "planned" && plan.edits.length === 0) ||
+        plan.edits.length > MODEL_LIMITS.edits) {
+      throw new PlannerError("INVALID_RESPONSE", "Planner metadata is inconsistent with its edits.");
+    }
+  }
+  return plan;
+}
+
+/** @typedef {{status: 'planned' | 'cannot_plan', summary: string, reason: string | null}} PlanMetadata */
+/** @param {unknown} value @returns {PlanMetadata} */
+export function responseMetadata(value) {
+  try {
+    requireObject(value, ["status", "summary", "reason"], "Plan metadata");
+    if (typeof value.summary !== "string" || !value.summary.trim() || value.summary.length > MODEL_LIMITS.summaryCharacters ||
+        (value.status !== "planned" && value.status !== "cannot_plan") ||
+        (value.status === "planned" && value.reason !== null) ||
+        (value.status === "cannot_plan" && (typeof value.reason !== "string" || !value.reason.trim() || value.reason.length > MODEL_LIMITS.reasonCharacters))) {
+      throw new Error("Invalid metadata.");
+    }
+    return { status: value.status, summary: value.summary, reason: /** @type {string | null} */ (value.reason) };
+  } catch (error) { throw new PlannerError("INVALID_RESPONSE", "Planner returned invalid summary metadata."); }
 }

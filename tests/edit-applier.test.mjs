@@ -7,6 +7,79 @@ import { registerActions } from "../src/tiled/actions.mjs";
 import { generateFromInstruction } from "../src/tiled/generate-action.mjs";
 import { plannerHost } from "./helpers/planner-host.mjs";
 
+/** @param {import('node:test').TestContext} t @param {() => boolean} decide */
+function modelDialog(t, decide) {
+  const body = { readOnly: false, plainText: "" };
+  /** @type {string[]} */
+  const buttons = [];
+  class FakeDialog {
+    static Accepted = 1;
+    /** @param {string} label */
+    addTextEdit(label) { assert.equal(label, ""); return body; }
+    /** @param {string} name */
+    addButton(name) { buttons.push(name); return { clicked: { connect() {} } }; }
+    exec() { return decide() ? 1 : 0; }
+  }
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "Dialog");
+  Object.defineProperty(globalThis, "Dialog", { value: FakeDialog, configurable: true });
+  t.after(() => {
+    if (previous) Object.defineProperty(globalThis, "Dialog", previous);
+    else Reflect.deleteProperty(globalThis, "Dialog");
+  });
+  return { body, buttons };
+}
+
+for (const accept of [false, true]) test(`AI confirmation uses plain text and ${accept ? "applies once" : "cancels without edits"}`, t => {
+  const f = fixture(t);
+  const host = plannerHost(t); host.state.provider = "openai";
+  f.metadata.ai_name = "grass";
+  f.api.prompt = () => "Create a small pond surrounded by grass.";
+  Object.defineProperty(host.state, "stdout", { get: () => JSON.stringify({ schemaVersion: 1,
+    requestId: host.state.request?.requestId, plan: f.plan,
+    metadata: { status: "planned", summary: "<img src='external'> & grass", reason: null } }) });
+  const dialog = modelDialog(t, () => { assert.ok(!f.calls.includes("edit")); return accept; });
+  generateFromInstruction("main.mjs");
+  assert.equal(dialog.body.readOnly, true);
+  assert.match(dialog.body.plainText, /<img src='external'> & grass/);
+  assert.match(dialog.body.plainText, /2 tile edits\?\nLayer: Ground/);
+  assert.deepEqual(dialog.buttons, ["Apply", "Cancel"]);
+  assert.ok(host.state.request?.tileCatalog);
+  assert.equal(f.calls.filter(call => call === "apply").length, accept ? 1 : 0);
+  assert.doesNotThrow(() => host.collectGarbage());
+});
+
+test("AI cannot_plan displays reason as plain text and creates no edit", t => {
+  const f = fixture(t); const host = plannerHost(t); host.state.provider = "openai";
+  f.metadata.ai_name = "grass";
+  Object.defineProperty(host.state, "stdout", { get: () => JSON.stringify({ schemaVersion: 1,
+    requestId: host.state.request?.requestId, plan: { ...f.plan, edits: [] },
+    metadata: { status: "cannot_plan", summary: "No plan", reason: "<b>Add water</b>" } }) });
+  const dialog = modelDialog(t, () => false);
+  generateFromInstruction("main.mjs");
+  assert.match(dialog.body.plainText, /<b>Add water<\/b>/);
+  assert.deepEqual(dialog.buttons, ["Close"]);
+  assert.ok(!f.calls.includes("edit"));
+});
+
+test("AI summary approval still rechecks stale map state", t => {
+  const f = fixture(t); const host = plannerHost(t); host.state.provider = "openai";
+  f.metadata.ai_name = "grass";
+  Object.defineProperty(host.state, "stdout", { get: () => JSON.stringify({ schemaVersion: 1,
+    requestId: host.state.request?.requestId, plan: f.plan,
+    metadata: { status: "planned", summary: "Grass", reason: null } }) });
+  modelDialog(t, () => { f.layer.locked = true; return true; });
+  assert.throws(() => generateFromInstruction("main.mjs"), /locked/);
+  assert.ok(!f.calls.includes("edit"));
+});
+
+test("AI caps selection at 256 before reading cells or starting the child", t => {
+  const f = fixture(t); const host = plannerHost(t); host.state.provider = "openai";
+  f.selection.width = 257;
+  f.layer.tileAt = () => { throw new Error("must not read"); };
+  assert.throws(() => generateFromInstruction("main.mjs"), /256/);
+  assert.deepEqual(host.events, []);
+});
+
 /** @param {import('node:test').TestContext} t */
 function fixture(t) {
   /** @type {string[]} */

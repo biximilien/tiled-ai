@@ -9,7 +9,7 @@ export function plannerHost(t) {
   const events = [];
   const state = {
     started: true, exitCode: 0, stderr: "", stdout: /** @type {string | null} */ (null),
-    waits: [true], override: "", exists: true,
+    waits: [true], override: "", provider: "", exists: true,
     request: /** @type {import('../../src/core/planner-protocol.mjs').PlannerRequest | null} */ (null),
   };
   /** @type {Child[]} */
@@ -20,7 +20,10 @@ export function plannerHost(t) {
     codec = "";
     get exitCode() { return state.exitCode; }
     /** @param {string} name */
-    getEnv(name) { assert.equal(name, "TILED_AI_NODE"); return state.override; }
+    getEnv(name) {
+      if (name === "TILED_AI_PROVIDER") return state.provider;
+      assert.equal(name, "TILED_AI_NODE"); return state.override;
+    }
     /** @param {string} executable @param {string[]} args */
     start(executable, args) {
       assert.equal(executable, state.override || "node");

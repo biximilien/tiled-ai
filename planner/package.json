@@ -1,0 +1,10 @@
+{
+  "name": "tiled-ai-planner",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "openai": "^7.15.0",
+    "zod": "^4.6.5"
+  }
+}
