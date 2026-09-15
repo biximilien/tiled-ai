@@ -12,7 +12,11 @@ export function plannerHost(t) {
     waits: [true], override: "", exists: true,
     request: /** @type {import('../../src/core/planner-protocol.mjs').PlannerRequest | null} */ (null),
   };
+  /** @type {Child[]} */
+  const wrappers = [];
   class Child {
+    closed = false;
+    constructor() { wrappers.push(this); }
     codec = "";
     get exitCode() { return state.exitCode; }
     /** @param {string} name */
@@ -35,7 +39,11 @@ export function plannerHost(t) {
     readStdErr() { return state.stderr; }
     terminate() { events.push("terminate"); }
     kill() { events.push("kill"); }
-    close() { events.push("close"); }
+    close() {
+      if (this.closed) throw new Error("Access to Process object that was already closed.");
+      this.closed = true;
+      events.push("close");
+    }
   }
   const globals = {
     Process: Child,
@@ -52,5 +60,9 @@ export function plannerHost(t) {
       else Reflect.deleteProperty(globalThis, key);
     });
   }
-  return { state, events };
+  // Tiled 1.11.2's native destructor calls close(), even after an explicit close.
+  function collectGarbage() {
+    for (const wrapper of wrappers.splice(0)) wrapper.close();
+  }
+  return { state, events, collectGarbage };
 }

@@ -58,14 +58,16 @@ export function runPlanner(request, extensionFile) {
     catch (error) { throw new PlannerError("INVALID_RESPONSE", "Local planner did not return one valid JSON document."); }
     return validatePlannerResponse(response, request);
   } finally {
-    try {
-      if (running) {
-        child.terminate();
-        if (!child.waitForFinished(PLANNER_LIMITS.cleanupMs)) {
-          child.kill();
-          child.waitForFinished(PLANNER_LIMITS.cleanupMs);
-        }
+    if (running) {
+      child.terminate();
+      if (!child.waitForFinished(PLANNER_LIMITS.cleanupMs)) {
+        child.kill();
+        child.waitForFinished(PLANNER_LIMITS.cleanupMs);
       }
-    } finally { child.close(); }
+    }
+    // Tiled 1.11.2's ScriptProcess destructor calls close() itself, and a
+    // second close throws into the JS engine during garbage collection.
+    // Leave wrapper disposal to Tiled; the child has finished or been killed.
+    // https://github.com/mapeditor/tiled/blob/v1.11.2/src/tiled/scriptprocess.cpp
   }
 }

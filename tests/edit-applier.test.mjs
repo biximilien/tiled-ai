@@ -163,6 +163,7 @@ test("Generate validates, confirms the count, then applies once", t => {
   action.invoke();
   assert.deepEqual(f.confirmations, ["Apply 2 tile edits?"]);
   assert.equal(f.calls.filter(call => call === "apply").length, 1);
+  host.collectGarbage();
   assert.equal(host.events[host.events.length - 1], "close");
   assert.equal(f.logs.pop(), "Applied 2 tile edits. Use Ctrl+Z to undo.");
 });

@@ -118,7 +118,11 @@ Example output for a 3 × 3 selection:
   "layer": { "id": 3, "name": "Ground" },
   "selection": { "x": 12, "y": 8, "width": 3, "height": 3 },
   "cells": [
-    [{ "tileset": "terrain", "tileId": 4 }, null, { "tileset": "terrain", "tileId": 9 }],
+    [
+      { "tileset": "terrain", "tileId": 4 },
+      null,
+      { "tileset": "terrain", "tileId": 9 }
+    ],
     [null, { "tileset": "terrain", "tileId": 4 }, null],
     [null, null, null]
   ]
@@ -268,11 +272,11 @@ unexpected exceptions still reach diagnostic logging.
 
 The Console command is `tiled.trigger("TiledAiGenerate")`.
 
-| Instruction | Result |
-| --- | --- |
-| `fill empty cells` | Fill empty cells with the most common selected tile. |
-| `fill empty` | Exact alias for `fill empty cells`. |
-| `noop` | Propose no changes, even for an entirely empty selection. |
+| Instruction        | Result                                                    |
+| ------------------ | --------------------------------------------------------- |
+| `fill empty cells` | Fill empty cells with the most common selected tile.      |
+| `fill empty`       | Exact alias for `fill empty cells`.                       |
+| `noop`             | Propose no changes, even for an entirely empty selection. |
 
 Case and surrounding whitespace are normalized. Empty input cancels without
 starting a process. Other instructions fail explicitly: this is a deterministic
@@ -339,18 +343,22 @@ shows concise failures; valid-looking stdout never overrides a failing exit code
 
 Shared constants in `src/core/planner-protocol.mjs` enforce:
 
-| Limit | Value |
-| --- | --- |
-| Instruction | 2,000 UTF-16 code units |
-| Selected area | 4,096 cells, checked before reading the matrix |
-| Serialized request | 1 MiB of UTF-8 |
-| Stdout response | 1 MiB of UTF-8 |
-| Planner wait | 5,000 ms |
-| Termination/kill grace waits | 250 ms each |
+| Limit                        | Value                                          |
+| ---------------------------- | ---------------------------------------------- |
+| Instruction                  | 2,000 UTF-16 code units                        |
+| Selected area                | 4,096 cells, checked before reading the matrix |
+| Serialized request           | 1 MiB of UTF-8                                 |
+| Stdout response              | 1 MiB of UTF-8                                 |
+| Planner wait                 | 5,000 ms                                       |
+| Termination/kill grace waits | 250 ms each                                    |
 
 Requests are size-checked before startup; the CLI also caps stdin bytes before
 parsing. Tiled checks stdout size before parsing it. On timeout it attempts
-termination, waits briefly, kills if necessary, and always closes resources.
+termination, waits briefly, and kills if necessary. Finished process wrappers are
+released by Tiled's native destructor rather than calling `Process.close()`
+explicitly: Tiled 1.11.2 calls `close()` again during garbage collection and
+throws if it was already closed. This avoids spurious errors on later Generate
+calls while still stopping timed-out children promptly.
 The synchronous call can block the editor briefly (up to the timeout plus
 cleanup). Qt buffers child output until it is read, so the response cap is not
 a hard bound on Qt's internal buffer memory. Before real model calls, replace
