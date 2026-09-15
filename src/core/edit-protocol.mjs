@@ -29,6 +29,7 @@ export function requireObject(value, keys, label) {
 /** @param {unknown} value @param {string} label @returns {asserts value is unknown[]} */
 export function requireArray(value, label) {
   requireValid(Array.isArray(value), `${label} must be an array.`);
+  requireValid(Object.getPrototypeOf(value) === Array.prototype, `${label} must be a plain array.`);
   requireValid(Reflect.ownKeys(value).length === value.length + 1, `${label} must be a dense plain array.`);
   for (let i = 0; i < value.length; i++) {
     const descriptor = Object.getOwnPropertyDescriptor(value, String(i));

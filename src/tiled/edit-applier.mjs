@@ -32,8 +32,15 @@ export function applyEditPlan(plan, context, map, layer) {
     if (matches.length !== 1) throw new EditError(
       `The generated edit plan is invalid: ${matches.length ? "Ambiguous" : "Unknown"} tileset "${change.tile.tileset}".`,
     );
-    // tile(id) can return null at runtime despite its non-nullable typings.
-    const tile = matches[0].tile(change.tile.tileId);
+    // Tiled 1.11.2 throws for missing IDs; also guard null from other hosts.
+    /** @type {Tile | null} */
+    let tile;
+    try {
+      tile = matches[0].tile(change.tile.tileId);
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "Invalid tile ID") throw error;
+      tile = null;
+    }
     requireValid(tile && tile.id === change.tile.tileId,
       `The generated edit plan is invalid: Missing local tile ID ${change.tile.tileId} in "${change.tile.tileset}".`);
     return { x: change.x, y: change.y, tile };

@@ -34,9 +34,16 @@ export function validateEditPlan(plan, context) {
       seen.add(key);
       requireValid(context.cells[edit.y - y][edit.x - x] === null, "Edit targets an originally populated cell.");
       requireTileReference(edit.tile);
-      edits.push({ operation: "setTile", x: edit.x, y: edit.y, tile: { ...edit.tile } });
+      edits.push({
+        operation: "setTile", x: edit.x, y: edit.y,
+        tile: { tileset: edit.tile.tileset, tileId: edit.tile.tileId },
+      });
     }
-    return { schemaVersion: 1, target: { layerId: context.layer.id, selection: { ...context.selection } }, edits };
+    return {
+      schemaVersion: 1,
+      target: { layerId: context.layer.id, selection: { x, y, width, height } },
+      edits,
+    };
   } catch (error) {
     if (error instanceof EditError) throw new EditError(`The generated edit plan is invalid: ${error.message}`);
     throw error;

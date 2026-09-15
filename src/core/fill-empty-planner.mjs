@@ -15,7 +15,7 @@ export function planFillEmptyCells(context) {
     }
   }
   // Ties use lexicographic (UTF-16, locale-independent) name, then numeric ID.
-  const candidates = [...counts.values()].sort((a, b) =>
+  const candidates = Array.from(counts.values()).sort((a, b) =>
     b.count - a.count ||
     (a.tile.tileset < b.tile.tileset ? -1 : a.tile.tileset > b.tile.tileset ? 1 : 0) ||
     a.tile.tileId - b.tile.tileId);
@@ -24,7 +24,13 @@ export function planFillEmptyCells(context) {
   /** @type {import('./edit-protocol.mjs').EditPlan} */
   const plan = {
     schemaVersion: 1,
-    target: { layerId: context.layer.id, selection: { ...context.selection } },
+    target: {
+      layerId: context.layer.id,
+      selection: {
+        x: context.selection.x, y: context.selection.y,
+        width: context.selection.width, height: context.selection.height,
+      },
+    },
     edits: [],
   };
   const source = candidates[0].tile;
@@ -33,7 +39,7 @@ export function planFillEmptyCells(context) {
       operation: "setTile",
       x: context.selection.x + x,
       y: context.selection.y + y,
-      tile: { ...source },
+      tile: { tileset: source.tileset, tileId: source.tileId },
     });
   }));
   return plan;

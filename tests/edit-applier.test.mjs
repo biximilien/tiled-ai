@@ -98,6 +98,9 @@ const failures = [
   ["unknown tileset", f => { f.plan.edits[1].tile.tileset = "missing"; }, /Unknown tileset/],
   ["duplicate tileset name", f => { f.data.tilesets.push(f.data.tilesets[0]); }, /Ambiguous tileset/],
   ["missing local ID after a valid resolution", f => { f.plan.edits[1].tile.tileId = 99; }, /Missing local tile ID/],
+  ["Tiled 1.11.2 missing-ID exception", f => {
+    f.data.tilesets[0].tile = () => { throw new Error("Invalid tile ID"); };
+  }, /Missing local tile ID/],
   ["invalid second command", f => { f.plan.edits[1].x = 100; }, /outside/],
   ["locked layer", f => { f.layer.locked = true; }, /locked/],
   ["read-only layer", f => { f.layer.readOnly = true; }, /read-only/],
