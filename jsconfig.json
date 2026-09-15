@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    "target": "ES2020",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["@mapeditor/tiled-api", "node"]
+  },
+  "include": ["src/**/*.mjs", "tests/**/*.mjs"]
+}
