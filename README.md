@@ -2,7 +2,9 @@
 
 A prototype Tiled extension intended to evolve into an AI-assisted map editing
 tool. Currently, **Map → AI: Hello** displays the active tile map's dimensions
-(in tiles), or asks you to open a tile map. No AI integration is implemented.
+(in tiles), or asks you to open a tile map. **Map → AI: Inspect Selection** logs
+a versioned JSON context for the active tile layer's rectangular tile selection.
+Inspection is read-only. No AI integration is implemented.
 
 ## Requirements
 
@@ -73,18 +75,88 @@ for extension loading and reloading, and the
 ```powershell
 npm test
 npm run check
+npx --yes --package typescript tsc --project jsconfig.json
 ```
 
-Tests use Node's built-in runner to exercise the pure validation function.
-`check` checks syntax in all runtime modules. VS Code checks JavaScript types.
-The steps above verify actual Tiled loading, menus, and dialogs separately.
+Tests use Node's built-in runner for core validation, selection serialization,
+invalid editor states, action registration, and error reporting. Small fake
+objects stand in for the Tiled API. `check` checks syntax in all runtime modules.
+The final command downloads a temporary TypeScript checker and checks JavaScript
+types without emitting files; VS Code also checks these types. No formatter or
+lint command is configured.
+
+## Inspect Selection
+
+Select a tile layer and use Tiled's rectangular tile selection tool to select
+an area. Choose **Map → AI: Inspect Selection**, then read the JSON in
+**View → Views and Toolbars → Console**.
+
+Only one non-empty rectangle is supported. Disjoint selections, selections with
+holes, and other regions represented by multiple rectangles are rejected;
+the action does not substitute their bounding box. Missing maps and non-tile
+layers produce actionable alerts.
+
+Example output for a 3 × 3 selection:
+
+```json
+{
+  "schemaVersion": 1,
+  "map": {
+    "width": 100,
+    "height": 80,
+    "tileWidth": 16,
+    "tileHeight": 16,
+    "infinite": false
+  },
+  "layer": { "id": 3, "name": "Ground" },
+  "selection": { "x": 12, "y": 8, "width": 3, "height": 3 },
+  "cells": [
+    [{ "tileset": "terrain", "tileId": 4 }, null, { "tileset": "terrain", "tileId": 9 }],
+    [null, { "tileset": "terrain", "tileId": 4 }, null],
+    [null, null, null]
+  ]
+}
+```
+
+Rows run from top to bottom and cells from left to right; `cells[0][0]` is at
+the selection origin. `null` is an empty cell. Tile IDs are local to the named
+tileset, not TMX global IDs. Infinite-map selections retain negative tile
+coordinates. Flip/rotation flags are intentionally omitted in schema version 1.
+The output includes no file paths, raw map documents, or custom metadata.
+
+### Manual integration test
+
+1. Open the Console and a finite orthogonal map.
+2. Select a tile layer with at least two tile types and one empty cell.
+3. Select a 3 × 3 tile rectangle, then save the map so it has no modified marker.
+4. Invoke **Map → AI: Inspect Selection**.
+5. Copy the JSON into a JSON editor/parser and confirm it parses. Compare its
+   selection origin, three rows of three cells, local tile IDs, tileset names,
+   and map/layer dimensions and identity against the map.
+6. Make a disjoint or non-rectangular selection and invoke the action again.
+   Confirm it refuses the selection with a clear alert.
+7. Try an empty selection, a non-tile layer, and no open map. For the last case,
+   use `tiled.trigger("TiledAiInspectSelection")` in the Console if the menu is
+   disabled. Each should give a useful alert.
+8. Confirm inspection never adds a modified marker to the map.
+9. If an infinite map is available, repeat with negative selection coordinates.
+
+Development verification used Tiled 1.11.2 with `@mapeditor/tiled-api` 1.12.0.
+The reader passed a command-line smoke check using real Tiled tiles, layers,
+and regions. Headless Tiled has no editor selection, so that check supplied a
+selection fixture; the live selection, menu, and dialogs require the manual
+steps above. No version-specific API substitution was needed. The reader
+guards missing `currentLayer` values despite the typings declaring it non-null,
+and narrows `Layer` to `TileLayer` after checking `isTileLayer`.
 
 ## Architecture
 
 - `src/main.mjs`: startup log and action registration.
 - `src/core/validation.mjs`: pure validation without Tiled runtime access.
 - `src/tiled/actions.mjs`: Tiled API integration and dialogs.
+- `src/tiled/map-reader.mjs`: editor-state validation and read-only selection context.
 - `tests/validation.test.mjs`: core validation tests.
+- `tests/map-reader.test.mjs`: selection context and action tests using small fixtures.
 
 Tiled runs the extension in its own JavaScript environment, not Node.js.
 Runtime code must not assume `fs`, `path`, `process`, `Buffer`, `fetch`, or
@@ -97,8 +169,8 @@ the plugin validates and executes its proposals.
 
 ## Planned direction
 
-- **v0.1:** inspect the active layer / selected map region.
-- **v0.2:** serialize a region into a small JSON context.
+- **v0.1–v0.2 (implemented in iteration 1):** inspect one rectangular selection
+  on the active tile layer and serialize it into a small JSON context.
 - **v0.3:** accept a constrained list of tile edits.
 - **v0.4:** apply edits through `TileLayer.edit()`.
 - **v0.5:** communicate with a local AI backend over HTTP.
