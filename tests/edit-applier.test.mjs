@@ -4,6 +4,8 @@ import { applyEditPlan } from "../src/tiled/edit-applier.mjs";
 import { readSelectionContext } from "../src/tiled/map-reader.mjs";
 import { planFillEmptyCells } from "../src/core/fill-empty-planner.mjs";
 import { registerActions } from "../src/tiled/actions.mjs";
+import { generateFromInstruction } from "../src/tiled/generate-action.mjs";
+import { plannerHost } from "./helpers/planner-host.mjs";
 
 /** @param {import('node:test').TestContext} t */
 function fixture(t) {
@@ -57,6 +59,8 @@ function fixture(t) {
   const alerts = [];
   /** @type {string[]} */
   const logs = [];
+  /** @type {string[]} */
+  const confirmations = [];
   const api = {
     activeAsset: /** @type {Asset | null} */ (map),
     /** @param {string} id @param {() => void} invoke */
@@ -66,6 +70,9 @@ function fixture(t) {
     alert(message) { alerts.push(message); },
     /** @param {string} message */
     log(message) { logs.push(message); },
+    prompt() { return "fill empty cells"; },
+    /** @param {string} text */
+    confirm(text) { confirmations.push(text); return true; },
   };
   const previous = Object.getOwnPropertyDescriptor(globalThis, "tiled");
   Object.defineProperty(globalThis, "tiled", { value: api, configurable: true });
@@ -75,7 +82,7 @@ function fixture(t) {
   });
   const context = readSelectionContext(map);
   const plan = planFillEmptyCells(context);
-  return { calls, cells, tile, layer, data, map, target, context, plan, api, selection, actions, alerts, logs };
+  return { calls, cells, tile, layer, data, map, target, context, plan, api, selection, actions, alerts, logs, confirmations };
 }
 
 test("adapter resolves everything before one edit and one apply", t => {
@@ -144,4 +151,72 @@ test("prototype action reports success, no-op, empty selection, and unexpected f
   assert.doesNotThrow(() => action.invoke());
   assert.match(f.logs.pop() || "", /Fill Empty Cells failed: fixture failure/);
   assert.equal(f.alerts.pop(), "Could not fill empty cells. See Tiled's Console for details.");
+});
+
+test("Generate validates, confirms the count, then applies once", t => {
+  const f = fixture(t);
+  const host = plannerHost(t);
+  registerActions("extension/main.mjs");
+  const action = f.actions.get("TiledAiGenerate");
+  assert.ok(action);
+  assert.equal(action.text, "AI: Generate… (Prototype)");
+  action.invoke();
+  assert.deepEqual(f.confirmations, ["Apply 2 tile edits?"]);
+  assert.equal(f.calls.filter(call => call === "apply").length, 1);
+  assert.equal(host.events[host.events.length - 1], "close");
+  assert.equal(f.logs.pop(), "Applied 2 tile edits. Use Ctrl+Z to undo.");
+});
+
+test("Generate cancels blank prompts before process startup", t => {
+  const f = fixture(t);
+  const { events } = plannerHost(t);
+  f.api.prompt = () => "   ";
+  generateFromInstruction("main.mjs");
+  assert.deepEqual(events, []);
+  assert.deepEqual(f.calls, []);
+});
+
+test("Generate decline and noop never create an edit", t => {
+  const f = fixture(t);
+  plannerHost(t);
+  f.api.confirm = () => false;
+  generateFromInstruction("main.mjs");
+  assert.ok(!f.calls.includes("edit"));
+  f.api.prompt = () => "noop";
+  f.api.confirm = () => { throw new Error("noop must not confirm"); };
+  generateFromInstruction("main.mjs");
+  assert.equal(f.logs.pop(), "No changes were proposed.");
+  assert.ok(!f.calls.includes("edit"));
+});
+
+test("Generate rejects stale state before confirmation and again after approval", t => {
+  const f = fixture(t);
+  plannerHost(t);
+  f.api.prompt = () => { f.api.activeAsset = null; return "fill empty"; };
+  assert.throws(() => generateFromInstruction("main.mjs"), /map or selected layer changed/);
+  assert.deepEqual(f.confirmations, []);
+  f.api.activeAsset = f.map;
+  f.api.prompt = () => "fill empty";
+  f.api.confirm = () => { f.cells[1] = f.tile; return true; };
+  assert.throws(() => generateFromInstruction("main.mjs"), /selection or its contents changed/);
+  assert.ok(!f.calls.includes("edit"));
+});
+
+test("Generate refuses an invalid tile reference before confirmation", t => {
+  const f = fixture(t);
+  const { state } = plannerHost(t);
+  f.data.tilesets.length = 0;
+  assert.throws(() => generateFromInstruction("main.mjs"), /Unknown tileset/);
+  assert.ok(state.request);
+  assert.deepEqual(f.confirmations, []);
+  assert.ok(!f.calls.includes("edit"));
+});
+
+test("Generate caps selection before reading cells or prompting", t => {
+  const f = fixture(t);
+  const { events } = plannerHost(t);
+  f.selection.width = 4097;
+  f.layer.tileAt = () => { throw new Error("should not read cells"); };
+  assert.throws(() => generateFromInstruction("main.mjs"), /4,096/);
+  assert.deepEqual(events, []);
 });

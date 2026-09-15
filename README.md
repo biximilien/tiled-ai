@@ -7,11 +7,13 @@ a versioned JSON context for the active tile layer's rectangular tile selection.
 Inspection is read-only. No AI integration is implemented.
 **Map → AI: Fill Empty Cells (Prototype)** now uses a deterministic planner to
 fill selected empty cells with the most common tile in the selection.
+**Map → AI: Generate… (Prototype)** sends a supported instruction and selection
+to a one-shot local Node planner, then asks before applying its validated edits.
 
 ## Requirements
 
 - Tiled 1.8 or newer (for JavaScript modules)
-- Node.js 22 or newer, for development tooling only
+- Node.js 22 or newer, for development tooling and the local Generate planner
 - Git, Windows, and optionally VS Code
 
 ## Setup
@@ -85,7 +87,9 @@ deterministic planning, complete plan validation, atomic application, invalid
 editor states, action registration, and error reporting. Small fake
 objects stand in for the Tiled API. `check` checks syntax in all runtime modules.
 The final command downloads a temporary TypeScript checker and checks JavaScript
-types without emitting files; VS Code also checks these types. No formatter or
+types without emitting files; VS Code also checks these types. CLI integration
+tests launch Node and check real stdin/stdout and exit codes. `check` covers
+extension, planner, test, and tooling syntax. No formatter or
 lint command is configured.
 
 ## Inspect Selection
@@ -162,6 +166,11 @@ and narrows `Layer` to `TileLayer` after checking `isTileLayer`.
 - `src/core/edit-protocol.mjs`: versioned data types, shape checks, and domain errors.
 - `src/core/edit-validation.mjs`: whole-plan validation against the inspected context.
 - `src/tiled/edit-applier.mjs`: live target checks, tile resolution, and one atomic edit.
+- `src/core/planner-protocol.mjs`: shared request/response validation and limits.
+- `src/tiled/planner-process.mjs`: direct Node startup, UTF-8 transport, and cleanup.
+- `src/tiled/generate-action.mjs`: prompt, snapshot checks, and confirmation.
+- `planner/src/cli.mjs`: one-shot Node stdin/stdout entry point.
+- `planner/src/command-router.mjs`: explicit instruction routing to the existing planner.
 - `tests/validation.test.mjs`: core validation tests.
 - `tests/map-reader.test.mjs`: selection context and action tests using small fixtures.
 - `tests/edit-validation.test.mjs`: planner outcomes and invalid command rejection.
@@ -249,18 +258,150 @@ typings declaring a non-null `Tile` return. The adapter converts this known
 exception (and a possible null result) into a precise validation failure;
 unexpected exceptions still reach diagnostic logging.
 
+## Generate… (Prototype): local planner process
+
+1. Open a map, select a writable tile layer, and select a rectangle.
+2. Choose **Map → AI: Generate… (Prototype)**.
+3. Enter one of the supported instructions below.
+4. Review **Apply N tile edits?** and confirm to apply, or decline to cancel.
+5. Read the result in **View → Views and Toolbars → Console**.
+
+The Console command is `tiled.trigger("TiledAiGenerate")`.
+
+| Instruction | Result |
+| --- | --- |
+| `fill empty cells` | Fill empty cells with the most common selected tile. |
+| `fill empty` | Exact alias for `fill empty cells`. |
+| `noop` | Propose no changes, even for an entirely empty selection. |
+
+Case and surrounding whitespace are normalized. Empty input cancels without
+starting a process. Other instructions fail explicitly: this is a deterministic
+command router, not an AI model or arbitrary natural-language interpreter.
+The fill command keeps the existing tie-breaking rule and never overwrites tiles.
+
+The whole returned plan is validated, all tiles are resolved, and the original
+map/layer/selection is checked before confirmation. After confirmation, the
+executor repeats validation and stale-state checks immediately before mutation.
+Declining applies nothing. Empty plans report **No changes were proposed** with
+no confirmation, edit, or modified marker. Accepted edits use the existing single
+undo step and never automatically save the map.
+
+### Node discovery and junction installation
+
+The existing junction to `src/` remains sufficient; keep `planner/` next to
+`src/` in the repository. No build, extra junction, or server is needed.
+
+The action invokes `node` through Tiled's `Process` API using executable/argument
+parameters, without a shell. Node must be on the PATH inherited by Tiled. Check
+`node --version` before launching Tiled, or set an explicit executable:
+
+```powershell
+$env:TILED_AI_NODE = (Get-Command node).Source
+& "C:\Program Files\Tiled\tiled.exe"
+```
+
+You can instead assign a full Node executable path, such as
+`C:\Program Files\nodejs\node.exe`. Do not include command-line flags or extra
+quote characters in the variable value. Set the environment before starting a
+fresh Tiled instance; an already running instance retains its previous environment.
+
+Tiled captures `main.mjs`'s `__filename` at startup. On this Windows installation,
+`FileInfo.canonicalPath()` does **not** resolve directory junctions. A fixed
+Node bootstrap uses `fs.realpathSync()` on that extension file, then Node path
+utilities to locate the sibling `planner/src/cli.mjs`. The bootstrap runs via
+Node's `--eval` argument; it contains no user-provided code. Instructions and
+context travel only through stdin. It resolves the extension's own path and
+does not read map files or scan directories. Missing Node or planner files
+produce a clear error.
+
+### Protocol and limits
+
+The extension sends exactly one UTF-8 JSON request through stdin and closes the
+write channel to signal EOF:
+
+```text
+{ schemaVersion: 1, requestId, instruction, context }
+```
+
+Success requires exit code 0 and exactly one stdout JSON response:
+
+```text
+{ schemaVersion: 1, requestId, plan }
+```
+
+`context` and `plan` are the existing versioned contracts. The opaque request ID
+is a timestamp plus an increasing counter and must match exactly. It is only
+for correlation. The CLI emits no banners or logs on stdout. Failures exit
+nonzero and report `[CODE] message` on stderr, distinguishing malformed JSON,
+unsupported schema, invalid request/context, unsupported instruction, planner
+failure, size limits, and unexpected internal errors. Tiled logs diagnostics and
+shows concise failures; valid-looking stdout never overrides a failing exit code.
+
+Shared constants in `src/core/planner-protocol.mjs` enforce:
+
+| Limit | Value |
+| --- | --- |
+| Instruction | 2,000 UTF-16 code units |
+| Selected area | 4,096 cells, checked before reading the matrix |
+| Serialized request | 1 MiB of UTF-8 |
+| Stdout response | 1 MiB of UTF-8 |
+| Planner wait | 5,000 ms |
+| Termination/kill grace waits | 250 ms each |
+
+Requests are size-checked before startup; the CLI also caps stdin bytes before
+parsing. Tiled checks stdout size before parsing it. On timeout it attempts
+termination, waits briefly, kills if necessary, and always closes resources.
+The synchronous call can block the editor briefly (up to the timeout plus
+cleanup). Qt buffers child output until it is read, so the response cap is not
+a hard bound on Qt's internal buffer memory. Before real model calls, replace
+this synchronous prototype with cancellable asynchronous transport and bounded
+streaming output. No model, network service, credentials, or SDK is used here.
+
+### Windows verification
+
+Automated tests cover protocol rejection, real CLI input/output, fake process
+failure/cleanup paths, declined confirmation, empty plans, and stale state before
+and after confirmation. Real Tiled 1.11.2 / Qt 6.8.1 command-line smoke checks on
+Windows confirmed PATH discovery, an explicit `TILED_AI_NODE` path containing
+spaces, junction resolution, UTF-8 round trips (`forêt 世界 😀`), invalid Node
+startup, and a five-second timeout that terminated, killed, waited, and closed a
+real hanging child. These were automated headless checks, not manual GUI tests.
+This runtime also requires `catch (error)` rather than optional catch bindings.
+
+**Manual GUI confirmation and one-step undo/redo remain unverified.** Use a
+disposable map and the existing junction installation:
+
+1. Start a fresh Tiled instance with Node on PATH or `TILED_AI_NODE` configured.
+2. Open the Console, select a writable tile layer, and select a rectangle with
+   tiles and empty cells.
+3. Invoke **AI: Generate… (Prototype)**, enter `fill empty cells`, and confirm.
+4. Verify only empty cells filled. Undo once, then redo once.
+5. Repeat and decline confirmation; verify nothing changes.
+6. Enter `noop`, then blank input; verify neither creates an edit.
+7. Enter an unsupported instruction; verify a clear error and no changes.
+8. Launch a fresh Tiled with an invalid `TILED_AI_NODE` and verify the startup
+   error. Restore the variable and restart Tiled.
+9. For failure testing only, back up `planner/src/cli.mjs` outside `src/`, replace
+   its contents with `process.stdout.write("not JSON")`, and verify rejection.
+10. Replace its contents with `process.stdin.resume(); setInterval(() => {}, 1000)`
+    and verify timeout recovery. Restore the exact original CLI afterwards.
+11. Invoke the normal action again without reinstalling the extension. If
+    convenient, use non-ASCII tileset names and confirm the round trip.
+
 ## Planned direction
 
 - **v0.1–v0.2 (implemented in iteration 1):** inspect one rectangular selection
   on the active tile layer and serialize it into a small JSON context.
 - **v0.3–v0.4 (implemented in iteration 2):** validate constrained `setTile`
   plans and fill empty cells through `TileLayer.edit()` with one undo step.
-- **v0.5:** communicate with a local AI backend over HTTP.
+- **Iteration 3 (implemented):** local deterministic planner CLI over stdin/stdout,
+  with response validation and confirmation.
+- **Future backend:** replace deterministic interpretation behind the process boundary.
 - **v0.6:** selection-aware generation and preview.
 
-The extension will stay thin. A future local service will handle prompts,
+The extension will stay thin. A future local planner will handle prompts,
 model access, and planning; the extension will inspect maps, validate edits,
-apply changes, and present previews. No HTTP client or backend is needed yet.
+apply changes, and present previews. No HTTP client or long-running service is needed.
 
 ## License
 

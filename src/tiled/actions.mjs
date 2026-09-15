@@ -3,8 +3,10 @@ import { readSelectionContext, SelectionError } from "./map-reader.mjs";
 import { EditError } from "../core/edit-protocol.mjs";
 import { planFillEmptyCells } from "../core/fill-empty-planner.mjs";
 import { applyEditPlan } from "./edit-applier.mjs";
+import { generateFromInstruction } from "./generate-action.mjs";
 
-export function registerActions() {
+/** @param {string} [extensionFile] Startup main.mjs path, captured before callbacks. */
+export function registerActions(extensionFile = "") {
   const action = tiled.registerAction("TiledAiHello", function () {
     const map = tiled.activeAsset;
 
@@ -61,9 +63,24 @@ export function registerActions() {
   });
   fillAction.text = "AI: Fill Empty Cells (Prototype)";
 
+  const generateAction = tiled.registerAction("TiledAiGenerate", function () {
+    try { generateFromInstruction(extensionFile); }
+    catch (error) {
+      if (error instanceof SelectionError || error instanceof EditError) {
+        tiled.alert(error.message);
+        return;
+      }
+      const details = error instanceof Error ? `${error.message}\n${error.stack || ""}` : String(error);
+      tiled.log(`Tiled AI: Generate failed: ${details}`);
+      tiled.alert("Could not generate edits. See Tiled's Console for details.");
+    }
+  });
+  generateAction.text = "AI: Generate… (Prototype)";
+
   tiled.extendMenu("Map", [
     { action: "TiledAiHello" },
     { action: "TiledAiInspectSelection" },
     { action: "TiledAiFillEmptyCells" },
+    { action: "TiledAiGenerate" },
   ]);
 }

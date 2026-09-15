@@ -6,8 +6,9 @@ export class SelectionError extends Error {}
 /**
  * Read one rectangular selection into plain data without modifying the map.
  * @param {Asset | null} asset
+ * @param {number} [maxCells] Optional cap checked before reading cells.
  */
-export function readSelectionContext(asset) {
+export function readSelectionContext(asset, maxCells = Infinity) {
   if (!isTileMapAsset(asset)) {
     throw new SelectionError("Open a tile map first.");
   }
@@ -32,6 +33,9 @@ export function readSelectionContext(asset) {
   const { x, y, width, height } = rectangles[0];
   if (width <= 0 || height <= 0) {
     throw new SelectionError("Select a rectangular tile area first.");
+  }
+  if (!Number.isSafeInteger(width * height) || width * height > maxCells) {
+    throw new SelectionError(`Select at most ${maxCells.toLocaleString("en-US")} cells.`);
   }
 
   const layer = /** @type {TileLayer} */ (currentLayer);

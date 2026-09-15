@@ -3,7 +3,7 @@ import { validateEditPlan } from "../core/edit-validation.mjs";
 import { readSelectionContext } from "./map-reader.mjs";
 
 /** @param {TileMap} map @param {TileLayer} layer */
-function requireCurrentTarget(map, layer) {
+export function requireCurrentTarget(map, layer) {
   requireValid(tiled.activeAsset === map && map.currentLayer === layer,
     "The map or selected layer changed before the edit could be applied.");
   requireValid(layer && layer.isTileLayer, "Select a tile layer first.");
@@ -14,15 +14,14 @@ function requireCurrentTarget(map, layer) {
   }
 }
 
-/** The only mutation boundary: never accepts a prevalidated bypass.
+/** Validate and resolve without mutation, also used before user confirmation.
  * @param {unknown} plan @param {import('../core/edit-protocol.mjs').SelectionContext} context
  * @param {TileMap} map @param {TileLayer} layer
- * @returns {number} Number of filled cells.
  */
-export function applyEditPlan(plan, context, map, layer) {
+export function validateAndResolveEditPlan(plan, context, map, layer) {
   const validated = validateEditPlan(plan, context);
   requireCurrentTarget(map, layer);
-  const live = readSelectionContext(map);
+  const live = readSelectionContext(map, context.selection.width * context.selection.height);
   // Catch selection/content changes too, including newly occupied target cells.
   requireValid(JSON.stringify(live) === JSON.stringify(context),
     "The map selection or its contents changed before the edit could be applied.");
@@ -51,6 +50,15 @@ export function applyEditPlan(plan, context, map, layer) {
     requireValid(layer.tileAt(change.x, change.y) === null,
       "A target cell is no longer empty. Inspect the selection again.");
   }
+  return resolved;
+}
+
+/** Always revalidate immediately before mutation, including after confirmation.
+ * @param {unknown} plan @param {import('../core/edit-protocol.mjs').SelectionContext} context
+ * @param {TileMap} map @param {TileLayer} layer
+ */
+export function applyEditPlan(plan, context, map, layer) {
+  const resolved = validateAndResolveEditPlan(plan, context, map, layer);
   if (!resolved.length) return 0;
 
   const edit = layer.edit();
