@@ -38,7 +38,14 @@ export function readSelectionContext(asset, maxCells = Infinity) {
     throw new SelectionError(`Select at most ${maxCells.toLocaleString("en-US")} cells.`);
   }
 
-  const layer = /** @type {TileLayer} */ (currentLayer);
+  return readRegionContext(map, /** @type {TileLayer} */ (currentLayer), { x, y, width, height });
+}
+
+/** Read captured coordinates independently of current layer/selection.
+ * @param {TileMap} map @param {TileLayer} layer
+ * @param {import('../core/edit-protocol.mjs').Rectangle} region */
+export function readRegionContext(map, layer, region) {
+  const { x, y, width, height } = region;
   const cells = [];
   for (let row = 0; row < height; row++) {
     const entries = [];

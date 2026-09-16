@@ -6,6 +6,11 @@ import { readSelectionContext } from "./map-reader.mjs";
 export function requireCurrentTarget(map, layer) {
   requireValid(tiled.activeAsset === map && map.currentLayer === layer,
     "The map or selected layer changed before the edit could be applied.");
+  requireWritableTarget(map, layer);
+}
+
+/** @param {TileMap} map @param {TileLayer} layer */
+export function requireWritableTarget(map, layer) {
   requireValid(layer && layer.isTileLayer, "Select a tile layer first.");
   requireValid(!map.readOnly, "The active map is read-only.");
   // A locked parent group also prevents editing its children.
@@ -17,14 +22,18 @@ export function requireCurrentTarget(map, layer) {
 /** Validate and resolve without mutation, also used before user confirmation.
  * @param {unknown} plan @param {import('../core/edit-protocol.mjs').SelectionContext} context
  * @param {TileMap} map @param {TileLayer} layer
+ * @param {() => void} [checkCapturedTarget] Generation jobs validate captured regions, not editor selections.
  */
-export function validateAndResolveEditPlan(plan, context, map, layer) {
+export function validateAndResolveEditPlan(plan, context, map, layer, checkCapturedTarget) {
   const validated = validateEditPlan(plan, context);
-  requireCurrentTarget(map, layer);
-  const live = readSelectionContext(map, context.selection.width * context.selection.height);
-  // Catch selection/content changes too, including newly occupied target cells.
-  requireValid(JSON.stringify(live) === JSON.stringify(context),
-    "The map selection or its contents changed before the edit could be applied.");
+  const verify = checkCapturedTarget || (() => {
+    requireCurrentTarget(map, layer);
+    const live = readSelectionContext(map, context.selection.width * context.selection.height);
+    requireValid(JSON.stringify(live) === JSON.stringify(context),
+      "The map selection or its contents changed before the edit could be applied.");
+  });
+  verify();
+  requireWritableTarget(map, layer);
 
   const resolved = validated.edits.map(change => {
     const matches = map.tilesets.filter(candidate => candidate.name === change.tile.tileset);
@@ -45,7 +54,7 @@ export function validateAndResolveEditPlan(plan, context, map, layer) {
     return { x: change.x, y: change.y, tile };
   });
 
-  requireCurrentTarget(map, layer);
+  verify();
   for (const change of resolved) {
     requireValid(layer.tileAt(change.x, change.y) === null,
       "A target cell is no longer empty. Inspect the selection again.");
@@ -56,9 +65,10 @@ export function validateAndResolveEditPlan(plan, context, map, layer) {
 /** Always revalidate immediately before mutation, including after confirmation.
  * @param {unknown} plan @param {import('../core/edit-protocol.mjs').SelectionContext} context
  * @param {TileMap} map @param {TileLayer} layer
+ * @param {() => void} [checkCapturedTarget]
  */
-export function applyEditPlan(plan, context, map, layer) {
-  const resolved = validateAndResolveEditPlan(plan, context, map, layer);
+export function applyEditPlan(plan, context, map, layer, checkCapturedTarget) {
+  const resolved = validateAndResolveEditPlan(plan, context, map, layer, checkCapturedTarget);
   if (!resolved.length) return 0;
 
   const edit = layer.edit();

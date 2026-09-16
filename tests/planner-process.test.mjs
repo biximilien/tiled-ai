@@ -1,91 +1,98 @@
-import test from "node:test";
+﻿import test from "node:test";
 import assert from "node:assert/strict";
 import { plannerHost } from "./helpers/planner-host.mjs";
 import { plannerRequest } from "./helpers/planner-fixture.mjs";
-import { runPlanner } from "../src/tiled/planner-process.mjs";
-import { PLANNER_LIMITS } from "../src/core/planner-protocol.mjs";
+import { startPlanner } from "../src/tiled/planner-process.mjs";
+import { parseJobResponse } from "../src/core/job-response.mjs";
+import { PLANNER_LIMITS, utf8Bytes } from "../src/core/planner-protocol.mjs";
+import { JOB_LIMITS, TILED_SUCCESS_EXIT } from "../src/core/job-errors.mjs";
 
-test("model process gets a 30-second cap and is terminated on timeout", t => {
+test("startup returns without any completion wait, writes one UTF-8 request and EOF", t => {
   const { state, events, collectGarbage } = plannerHost(t);
-  state.provider = "openai";
-  state.waits = [false, false, true];
-  assert.throws(() => runPlanner(plannerRequest(), "main.mjs"), /30 seconds/);
-  collectGarbage();
-  assert.deepEqual(events.slice(-6), ["wait:30000", "terminate", "wait:250", "kill", "wait:250", "close"]);
+  state.override = "C:/Program Files/nodejs/node.exe";
+  const request = plannerRequest();
+  const runner = startPlanner(request, "main.mjs");
+  assert.deepEqual(events, ["start", "write", "stdin-close"]);
+  assert.deepEqual(state.request, request);
+  assert.equal(runner.finished(), true);
+  assert.equal(parseJobResponse(runner.collect(), request).plan.edits.length, 2);
+  runner.dispose(); runner.dispose(); collectGarbage();
+  assert.deepEqual(events, ["start", "write", "stdin-close", "wait:0", "close"]);
 });
 
-test("repeated requests survive Tiled destructor cleanup between calls", t => {
+test("unfinished status check performs exactly one zero-timeout check", t => {
+  const { state, events } = plannerHost(t); state.waits = [false];
+  const runner = startPlanner(plannerRequest(), "main.mjs");
+  assert.equal(runner.finished(), false);
+  assert.deepEqual(events.slice(3), ["wait:0"]);
+  assert.throws(() => runner.collect(), /unfinished/);
+  runner.dispose(true);
+});
+
+test("completion after the Qt event loop reaped the child uses transport success marker", t => {
+  const { state } = plannerHost(t); state.waits = [false]; state.exitCode = TILED_SUCCESS_EXIT;
+  const runner = startPlanner(plannerRequest(), "main.mjs");
+  assert.equal(runner.finished(), true);
+  assert.equal(runner.collect().exitCode, 0);
+});
+
+test("repeated requests survive Tiled native disposal exactly once each", t => {
   const host = plannerHost(t);
-  const request = plannerRequest();
   for (const instruction of ["fill empty", "noop", "noop", "fill empty"]) {
-    request.instruction = instruction;
-    assert.doesNotThrow(() => runPlanner(request, "main.mjs"));
-    assert.doesNotThrow(() => host.collectGarbage());
+    const request = plannerRequest(); request.instruction = instruction;
+    const runner = startPlanner(request, "main.mjs");
+    assert.ok(runner.finished()); parseJobResponse(runner.collect(), request);
+    runner.dispose(); assert.doesNotThrow(host.collectGarbage);
   }
   assert.equal(host.events.filter(event => event === "close").length, 4);
 });
 
-test("process uses argument array, UTF-8 stdin, EOF, and native disposal after success", t => {
-  const { state, events, collectGarbage } = plannerHost(t);
-  state.override = "C:/Program Files/nodejs/node.exe";
-  const request = plannerRequest();
-  assert.equal(runPlanner(request, "extension/main.mjs").edits.length, 2);
-  assert.deepEqual(state.request, request);
-  collectGarbage();
-  assert.deepEqual(events, ["start", "write", "stdin-close", "wait:5000", "close"]);
-});
-
 /** @type {[string, (state: ReturnType<typeof plannerHost>['state']) => void, RegExp][]} */
 const failures = [
-  ["start failure", s => { s.started = false; }, /Could not start/],
-  ["nonzero exit despite JSON", s => { s.exitCode = 1; }, /exit 1/],
+  ["nonzero exit despite JSON", s => { s.exitCode = 1; }, /process failed/],
   ["empty stdout", s => { s.stdout = ""; }, /JSON/],
   ["malformed stdout", s => { s.stdout = "{} {}"; }, /JSON/],
-  ["oversized stdout", s => { s.stdout = "é".repeat(PLANNER_LIMITS.responseBytes); }, /1 MiB/],
-  ["wrong correlation", s => { s.stdout = JSON.stringify({ schemaVersion: 1, requestId: "wrong", plan: {} }); }, /request ID/],
+  ["log prefix on stdout", s => { s.stdout = "log\n{}"; }, /JSON/],
+  ["oversized stdout", s => { s.stdout = "é".repeat(PLANNER_LIMITS.responseBytes); }, /too large/],
+  ["wrong correlation", s => { s.stdout = JSON.stringify({ schemaVersion: 1, requestId: "wrong", plan: {} }); }, /another request/],
+  ["wrong schema", s => { s.stdout = JSON.stringify({ schemaVersion: 2, requestId: "wrong", plan: {} }); }, /version/],
+  ["invalid plan", s => { s.stdout = JSON.stringify({ schemaVersion: 1, requestId: plannerRequest().requestId, plan: {} }); }, /invalid plan/],
 ];
-for (const [name, corrupt, reason] of failures) {
-  test(`process rejects ${name} and permits native disposal`, t => {
-    const { state, events, collectGarbage } = plannerHost(t);
-    corrupt(state);
-    assert.throws(() => runPlanner(plannerRequest(), "main.mjs"), reason);
-    collectGarbage();
-    assert.equal(events[events.length - 1], "close");
-  });
-}
-
-test("timeout stops the child before native disposal", t => {
-  const { state, events, collectGarbage } = plannerHost(t);
-  state.waits = [false, false, true];
-  assert.throws(() => runPlanner(plannerRequest(), "main.mjs"), /timed out/);
-  collectGarbage();
-  assert.deepEqual(events.slice(-6), ["wait:5000", "terminate", "wait:250", "kill", "wait:250", "close"]);
+for (const [name, corrupt, reason] of failures) test(`collection rejects ${name} after releasing the handle`, t => {
+  const { state, events, collectGarbage } = plannerHost(t); corrupt(state);
+  const request = plannerRequest(); const runner = startPlanner(request, "main.mjs");
+  assert.ok(runner.finished());
+  assert.throws(() => parseJobResponse(runner.collect(), request), reason);
+  runner.dispose(); collectGarbage();
+  assert.equal(events.filter(event => event === "close").length, 1);
 });
 
-test("missing planner and oversized requests fail before starting a process", t => {
-  const { state, events } = plannerHost(t);
-  state.exists = false;
-  assert.throws(() => runPlanner(plannerRequest(), "main.mjs"), /entry point not found/);
-  const request = plannerRequest();
-  request.context.layer.name = "x".repeat(PLANNER_LIMITS.requestBytes);
-  assert.throws(() => runPlanner(request, "main.mjs"), /1 MiB/);
+test("cancel terminates then kills with short grace waits and is idempotent", t => {
+  const { state, events, collectGarbage } = plannerHost(t); state.waits = [false, true];
+  const runner = startPlanner(plannerRequest(), "main.mjs");
+  runner.dispose(true); runner.dispose(true); collectGarbage();
+  assert.deepEqual(events.slice(-5), ["terminate", "wait:250", "kill", "wait:250", "close"]);
+  assert.equal(runner.finished(), false);
+});
+
+test("start failures are actionable and release resources", t => {
+  const { state, events, collectGarbage } = plannerHost(t); state.started = false;
+  assert.throws(() => startPlanner(plannerRequest(), "main.mjs"), /Could not start/);
+  collectGarbage(); assert.equal(events.filter(event => event === "close").length, 1);
+});
+
+test("missing entry and oversized requests fail before starting a process", t => {
+  const { state, events } = plannerHost(t); state.exists = false;
+  assert.throws(() => startPlanner(plannerRequest(), "main.mjs"), /entry point not found/);
+  const request = plannerRequest(); request.context.layer.name = "x".repeat(PLANNER_LIMITS.requestBytes);
+  assert.throws(() => startPlanner(request, "main.mjs"), /1 MiB/);
   assert.deepEqual(events, []);
 });
 
-test("stderr is diagnostic only and is captured before failure", t => {
-  const { state, events, collectGarbage } = plannerHost(t);
-  /** @type {string[]} */
-  const logs = [];
-  const previous = Object.getOwnPropertyDescriptor(globalThis, "tiled");
-  Object.defineProperty(globalThis, "tiled", { value: { log: (/** @type {string} */ text) => logs.push(text) }, configurable: true });
-  t.after(() => {
-    if (previous) Object.defineProperty(globalThis, "tiled", previous);
-    else Reflect.deleteProperty(globalThis, "tiled");
-  });
-  state.stderr = "[UNSUPPORTED_INSTRUCTION] Unknown instruction.\n";
-  state.exitCode = 1;
-  assert.throws(() => runPlanner(plannerRequest(), "main.mjs"), /Unknown instruction/);
-  assert.match(logs[0], /UNSUPPORTED_INSTRUCTION/);
-  collectGarbage();
-  assert.equal(events[events.length - 1], "close");
+test("stderr is byte bounded and never becomes executable or user-visible data", t => {
+  const { state } = plannerHost(t); state.stderr = "SECRET 😀".repeat(10000);
+  const request = plannerRequest(); const runner = startPlanner(request, "main.mjs");
+  assert.ok(runner.finished()); const output = runner.collect();
+  assert.ok(utf8Bytes(output.stderr) <= JOB_LIMITS.stderrBytes);
+  assert.equal(parseJobResponse(output, request).plan.edits.length, 2);
 });

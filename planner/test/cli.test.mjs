@@ -33,8 +33,6 @@ test("CLI failures exit nonzero, use typed stderr, and never emit success JSON",
     [JSON.stringify({ ...request, schemaVersion: 2 }), "UNSUPPORTED_SCHEMA"],
     ["{}", "INVALID_REQUEST"],
     [JSON.stringify({ ...request, context: {} }), "INVALID_CONTEXT"],
-    [JSON.stringify({ ...request, instruction: "plant a forest" }), "UNSUPPORTED_INSTRUCTION"],
-    [JSON.stringify({ ...request, context: { ...request.context, cells: [[null, null, null]] } }), "PLANNER_FAILURE"],
     ["x".repeat(PLANNER_LIMITS.requestBytes + 1), "SIZE_LIMIT"],
   ]) {
     const result = run(input);
@@ -56,7 +54,19 @@ test("CLI semantic catalog round trip preserves names and returns typed lookup e
   assert.equal(result.stderr, "");
   assert.deepEqual(JSON.parse(result.stdout).plan.edits[0].tile, { tileset: "terrain", tileId: 100 });
   const bad = run(JSON.stringify({ ...request, instruction: "fill empty with sand" }));
-  assert.notEqual(bad.status, 0);
-  assert.equal(bad.stdout, "");
-  assert.match(bad.stderr, /^\[UNKNOWN_TILE\]/);
+  assert.equal(bad.status, 0);
+  assert.equal(JSON.parse(bad.stdout).error.code, "UNKNOWN_TILE");
+  assert.equal(bad.stderr, "");
+});
+
+test("planner failures return correlated error envelopes without executable plans", () => {
+  for (const request of [ { ...plannerRequest(), instruction: "plant a forest" },
+    { ...plannerRequest(), context: { ...plannerRequest().context, cells: [[null, null, null]] } } ]) {
+    const result = run(JSON.stringify(request));
+    assert.equal(result.status, 0); assert.equal(result.stderr, "");
+    const response = JSON.parse(result.stdout);
+    assert.equal(response.requestId, request.requestId);
+    assert.deepEqual(Object.keys(response), ["schemaVersion", "requestId", "error"]);
+    assert.ok(["UNSUPPORTED_INSTRUCTION", "PLANNER_FAILURE"].includes(response.error.code));
+  }
 });

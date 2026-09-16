@@ -1,7 +1,8 @@
 import {
-  PlannerError, PLANNER_LIMITS, serializePlannerRequest, utf8Bytes, validatePlannerResponse, responseMetadata,
+  PlannerError, serializePlannerRequest,
 } from "../core/planner-protocol.mjs";
-import { MODEL_LIMITS, plannerProvider } from "../core/model-limits.mjs";
+import { plannerProvider } from "../core/model-limits.mjs";
+import { JOB_LIMITS, JobError, TILED_SUCCESS_EXIT } from "../core/job-errors.mjs";
 
 // Read only a non-secret provider switch. Native GC owns this wrapper, too.
 export function usesModelPlanner() {
@@ -15,7 +16,11 @@ const NODE_BOOTSTRAP = `
 import { realpathSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-const entry = resolve(dirname(realpathSync(process.argv[1])), "../planner/src/cli.mjs");
+// QProcess.waitForFinished(0) returns false if the event loop already reaped
+// a successful child. A nonzero transport success code makes exit observable.
+process.on("exit", code => { if (code === 0) process.exitCode = ${TILED_SUCCESS_EXIT}; });
+const entry = resolve(dirname(realpathSync(process.argv[1])), process.env.TILED_AI_TEST_MODE === "1"
+  ? "../planner/fixtures/fake-planner.mjs" : "../planner/src/cli.mjs");
 if (!existsSync(entry)) {
   process.stderr.write("[MISSING_PLANNER] Local planner entry point not found. Keep planner/ beside src/.\\n");
   process.exitCode = 1;
@@ -33,52 +38,69 @@ export function plannerLaunchArguments(extensionFile) {
   return ["--input-type=module", "--eval", NODE_BOOTSTRAP, canonical];
 }
 
-/** @param {import('../core/planner-protocol.mjs').PlannerRequest} request @param {string} extensionFile
- * @param {(metadata: import('../core/planner-protocol.mjs').PlanMetadata) => void} [onMetadata] */
-export function runPlanner(request, extensionFile, onMetadata) {
+/** Retain the native wrapper until collection or cancellation; no network wait.
+ * @param {import('../core/planner-protocol.mjs').PlannerRequest} request @param {string} extensionFile
+ * @param {{createProcess?:()=>Process, arguments?:string[]}} [host]
+ * @returns {import('../core/job-controller.mjs').Runner} */
+export function startPlanner(request, extensionFile, host = {}) {
   const input = serializePlannerRequest(request);
-  const args = plannerLaunchArguments(extensionFile);
-  const child = new Process();
-  let running = false;
+  const args = host.arguments || plannerLaunchArguments(extensionFile);
+  /** @type {Process|null} */
+  let child = host.createProcess ? host.createProcess() : new Process();
+  /** @type {'starting'|'running'|'finished'|'disposed'} */
+  let state = "starting";
+  /** Exactly-once logical disposal. Tiled 1.11.2 native destructor owns close.
+   * @param {boolean} [stop] */
+  function dispose(stop = false) {
+    if (!child) return;
+    const process = child;
+    child = null;
+    const previous = state;
+    state = "disposed";
+    if (stop && previous !== "finished") {
+      try { process.terminate(); }
+      catch (error) { /* Still attempt kill. */ }
+      try { if (process.waitForFinished(JOB_LIMITS.cleanupMs)) return; }
+      catch (error) { /* Still attempt kill. */ }
+      try { process.kill(); process.waitForFinished(JOB_LIMITS.cleanupMs); }
+      catch (error) { /* Native destructor remains the last resource owner. */ }
+    }
+    // Do NOT call native close(): its destructor calls it again and raises
+    // "Access to Process object that was already closed" in Tiled 1.11.2.
+    // Releasing our last reference lets native disposal happen once.
+    // https://github.com/mapeditor/tiled/blob/v1.11.2/src/tiled/scriptprocess.cpp
+  }
   try {
     child.codec = "UTF-8";
     const executable = child.getEnv("TILED_AI_NODE") || "node";
-    const timeout = plannerProvider(child.getEnv("TILED_AI_PROVIDER")) === "deterministic" ? PLANNER_LIMITS.timeoutMs : MODEL_LIMITS.timeoutMs;
     if (!child.start(executable, args)) {
-      throw new PlannerError("START_FAILURE", "Could not start the local planner. Check Node on PATH or TILED_AI_NODE, then restart Tiled.");
+      throw new JobError("start_failed", "Could not start the AI planner. Check Node on PATH or TILED_AI_NODE. The map was not changed.");
     }
-    running = true;
+    state = "running";
     child.write(input);
     child.closeWriteChannel();
-    if (!child.waitForFinished(timeout)) {
-      throw new PlannerError("TIMEOUT", `The local planner timed out after ${timeout / 1000} seconds.`);
-    }
-    running = false;
-    const stdout = child.readStdOut();
-    const stderr = child.readStdErr();
-    if (stderr) tiled.log(`Local planner stderr: ${stderr.slice(0, PLANNER_LIMITS.diagnosticCharacters)}`);
-    if (child.exitCode !== 0) {
-      const diagnostic = stderr.trim().split("\n")[0].slice(0, 240);
-      throw new PlannerError("PROCESS_FAILURE", `Local planner failed (exit ${child.exitCode}). ${diagnostic || "See Tiled's Console for details."}`);
-    }
-    if (utf8Bytes(stdout) > PLANNER_LIMITS.responseBytes) throw new PlannerError("SIZE_LIMIT", "Planner response exceeds 1 MiB.");
-    let response;
-    try { response = JSON.parse(stdout); }
-    catch (error) { throw new PlannerError("INVALID_RESPONSE", "Local planner did not return one valid JSON document."); }
-    const plan = validatePlannerResponse(response, request);
-    if (onMetadata && Object.prototype.hasOwnProperty.call(response, "metadata")) onMetadata(responseMetadata(response.metadata));
-    return plan;
-  } finally {
-    if (running) {
-      child.terminate();
-      if (!child.waitForFinished(PLANNER_LIMITS.cleanupMs)) {
-        child.kill();
-        child.waitForFinished(PLANNER_LIMITS.cleanupMs);
-      }
-    }
-    // Tiled 1.11.2's ScriptProcess destructor calls close() itself, and a
-    // second close throws into the JS engine during garbage collection.
-    // Leave wrapper disposal to Tiled; the child has finished or been killed.
-    // https://github.com/mapeditor/tiled/blob/v1.11.2/src/tiled/scriptprocess.cpp
+  } catch (error) {
+    dispose(true);
+    if (error instanceof JobError) throw error;
+    throw new JobError("start_failed", "Could not initialize the planner process. The map was not changed.");
   }
+  return {
+    finished() {
+      if (state === "finished") return true;
+      if (!child) return false;
+      if (child.waitForFinished(0) || child.exitCode !== 0) { state = "finished"; return true; }
+      return false;
+    },
+    collect() {
+      if (!child || state !== "finished") throw new JobError("internal_error", "Cannot collect an unfinished planner.");
+      try {
+        const code = child.exitCode;
+        const stdout = child.readStdOut();
+        // Retain at most 16 KiB even for worst-case UTF-8 (including emoji).
+        const stderr = child.readStdErr().slice(0, Math.floor(JOB_LIMITS.stderrBytes / 4));
+        return { exitCode: code === TILED_SUCCESS_EXIT ? 0 : code, stdout, stderr };
+      } finally { dispose(); }
+    },
+    dispose,
+  };
 }

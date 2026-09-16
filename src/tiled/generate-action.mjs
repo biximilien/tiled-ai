@@ -1,10 +1,10 @@
-import { requireSelectionContext } from "../core/edit-protocol.mjs";
+import { requireSelectionContext, requireValid } from "../core/edit-protocol.mjs";
 import { PLANNER_LIMITS } from "../core/planner-protocol.mjs";
 import { readSelectionContext } from "./map-reader.mjs";
-import { applyEditPlan, requireCurrentTarget, validateAndResolveEditPlan } from "./edit-applier.mjs";
-import { runPlanner, usesModelPlanner } from "./planner-process.mjs";
+import { requireCurrentTarget } from "./edit-applier.mjs";
+import { usesModelPlanner } from "./planner-process.mjs";
 import { MODEL_LIMITS } from "../core/model-limits.mjs";
-import { showPlanDialog } from "./plan-dialog.mjs";
+import { requireIdleGeneration, startGeneration } from "./job-lifecycle.mjs";
 import { isSemanticInstruction } from "../core/tile-catalog.mjs";
 import { buildTileCatalog, reportCatalog } from "./tile-catalog-reader.mjs";
 
@@ -12,6 +12,7 @@ let requestCounter = 0;
 
 /** @param {string} extensionFile */
 export function generateFromInstruction(extensionFile) {
+  requireIdleGeneration();
   const asset = tiled.activeAsset;
   const modelMode = usesModelPlanner();
   const context = readSelectionContext(asset, modelMode ? MODEL_LIMITS.selectedCells : PLANNER_LIMITS.selectedCells);
@@ -19,7 +20,7 @@ export function generateFromInstruction(extensionFile) {
   const map = /** @type {TileMap} */ (asset);
   const layer = /** @type {TileLayer} */ (map.currentLayer);
   requireCurrentTarget(map, layer);
-  const instruction = tiled.prompt(modelMode ? "Describe what to generate. Tiled may be unresponsive for up to 30 seconds." : "Instruction: fill empty cells, fill empty, noop, or fill empty with <name>", "fill empty cells", "Planner prototype");
+  const instruction = tiled.prompt(modelMode ? "Describe what to generate. Check Status will collect the result while you continue using Tiled." : "Instruction: fill empty cells, fill empty, noop, or fill empty with <name>", "fill empty cells", "Planner prototype");
   if (!instruction || !instruction.trim()) return;
   /** @type {import('../core/planner-protocol.mjs').PlannerRequest} */
   const request = {
@@ -29,17 +30,8 @@ export function generateFromInstruction(extensionFile) {
     context,
   };
   if (modelMode || isSemanticInstruction(instruction)) request.tileCatalog = reportCatalog(buildTileCatalog(map));
-  /** @type {{value: import('../core/planner-protocol.mjs').PlanMetadata | null}} */
-  const metadata = { value: null };
-  const plan = runPlanner(request, extensionFile, value => { metadata.value = value; });
-  validateAndResolveEditPlan(plan, context, map, layer);
-  if (metadata.value && metadata.value.status === "cannot_plan") {
-    showPlanDialog(`${metadata.value.summary}\n\n${metadata.value.reason}`, false);
-    return;
-  }
-  if (!plan.edits.length) { tiled.log("No changes were proposed."); return; }
-  const confirmed = metadata.value ? showPlanDialog(`${metadata.value.summary}\n\nApply ${plan.edits.length} tile edits?\nLayer: ${context.layer.name}`) : tiled.confirm(`Apply ${plan.edits.length} tile edits?`);
-  if (!confirmed) return;
-  const count = applyEditPlan(plan, context, map, layer);
-  tiled.log(`Applied ${count} tile edits. Use Ctrl+Z to undo.`);
+  requireCurrentTarget(map, layer);
+  requireValid(JSON.stringify(readSelectionContext(map, modelMode ? MODEL_LIMITS.selectedCells : PLANNER_LIMITS.selectedCells)) === JSON.stringify(context),
+    "The map selection or its contents changed before generation could start.");
+  startGeneration(request, map, layer, extensionFile);
 }

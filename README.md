@@ -15,7 +15,7 @@ Tiles annotated with `ai_name` can now be selected by exact semantic name using
 
 ## Requirements
 
-- Tiled 1.8 or newer (for JavaScript modules)
+- Tiled 1.11 or newer (for dialogs and map reload lifecycle signals)
 - Node.js 22 or newer, for development tooling and the local Generate planner
 - Git, Windows, and optionally VS Code
 
@@ -279,8 +279,10 @@ generation, use [OpenAI generation](#openai-generation-iteration-5) below.
 1. Open a map, select a writable tile layer, and select a rectangle.
 2. Choose **Map → AI: Generate… (Prototype)**.
 3. Enter one of the supported instructions below.
-4. Review **Apply N tile edits?** and confirm to apply, or decline to cancel.
-5. Read the result in **View → Views and Toolbars → Console**.
+4. Continue working while the non-modal status dialog stays open. Click
+   **Check Status** to collect the result, or **Cancel** to stop the job.
+5. Review **Apply N tile edits?** and confirm to apply, or decline to cancel.
+6. Read the result in **View → Views and Toolbars → Console**.
 
 The Console command is `tiled.trigger("TiledAiGenerate")`.
 
@@ -298,7 +300,8 @@ command router, not an AI model or arbitrary natural-language interpreter.
 The fill command keeps the existing tie-breaking rule and never overwrites tiles.
 
 The whole returned plan is validated, all tiles are resolved, and the original
-map/layer/selection is checked before confirmation. After confirmation, the
+map/layer/captured region is checked before confirmation. Changing the current
+selection or active layer does not change the captured target. After confirmation, the
 executor repeats validation and stale-state checks immediately before mutation.
 Declining applies nothing. Empty plans report **No changes were proposed** with
 no confirmation, edit, or modified marker. Accepted edits use the existing single
@@ -341,7 +344,7 @@ write channel to signal EOF:
 { schemaVersion: 1, requestId, instruction, context }
 ```
 
-Success requires exit code 0 and exactly one stdout JSON response:
+The standalone CLI uses exit code 0 and exactly one stdout JSON response:
 
 ```text
 { schemaVersion: 1, requestId, plan }
@@ -352,13 +355,15 @@ also include the optional `tileCatalog` field described below; the outer request
 schema remains version 1. Other commands omit the catalog, so malformed tile
 annotations do not block those commands. The opaque request ID
 is a timestamp plus an increasing counter and must match exactly. It is only
-for correlation. The CLI emits no banners or logs on stdout. Failures exit
-nonzero and report `[CODE] message` on stderr, distinguishing malformed JSON,
-unsupported schema, invalid request/context, unsupported instruction, planner
-failure, size limits, and unexpected internal errors. Tiled logs diagnostics and
-shows concise failures; valid-looking stdout never overrides a failing exit code.
+for correlation. The CLI emits no banners or logs on stdout. Expected planner
+failures return `{schemaVersion: 1, requestId, error: {code}}` with no plan and
+exit code 0. Invalid input or unexpected process failures exit nonzero with
+bounded diagnostic stderr. The Tiled launcher uses a reserved transport success
+code, translated by the adapter, to handle a Qt completion-detection quirk
+described under iteration 6. Other nonzero exit codes always reject the result.
+Stderr is never a source of executable data or raw user-facing messages.
 
-Shared constants in `src/core/planner-protocol.mjs` enforce:
+Shared constants in `src/core/planner-protocol.mjs` and `job-errors.mjs` enforce:
 
 | Limit                        | Value                                          |
 | ---------------------------- | ---------------------------------------------- |
@@ -366,7 +371,10 @@ Shared constants in `src/core/planner-protocol.mjs` enforce:
 | Selected area                | 4,096 cells, checked before reading the matrix |
 | Serialized request           | 1 MiB of UTF-8                                 |
 | Stdout response              | 1 MiB of UTF-8                                 |
-| Planner wait                 | 5,000 ms                                       |
+| Status check wait            | 0 ms                                           |
+| Node hard watchdog           | 32,000 ms                                      |
+| Overdue cleanup backstop     | 35,000 ms, checked only when Check Status is clicked |
+| Stderr retained              | At most 16 KiB                                 |
 | Termination/kill grace waits | 250 ms each                                    |
 
 Requests are size-checked before startup; the CLI also caps stdin bytes before
@@ -376,10 +384,10 @@ released by Tiled's native destructor rather than calling `Process.close()`
 explicitly: Tiled 1.11.2 calls `close()` again during garbage collection and
 throws if it was already closed. This avoids spurious errors on later Generate
 calls while still stopping timed-out children promptly.
-The synchronous call can block the editor briefly (up to the timeout plus
-cleanup). Qt buffers child output until it is read, so the response cap is not
-a hard bound on Qt's internal buffer memory. Cancellable asynchronous transport
-and bounded streaming output are planned for the next iteration.
+Startup returns after launching Node and sending stdin. There is no wait for
+planning or the network. Qt buffers child output until it is read, so the
+response cap is not a hard bound on Qt's internal buffer memory. Status is
+user-driven; there are no timers or polling loops in the extension.
 Deterministic mode uses no model, network service, credentials,
 or SDK. OpenAI mode uses the separate limits and setup below.
 
@@ -390,8 +398,9 @@ failure/cleanup paths, declined confirmation, empty plans, and stale state befor
 and after confirmation. Real Tiled 1.11.2 / Qt 6.8.1 command-line smoke checks on
 Windows confirmed PATH discovery, an explicit `TILED_AI_NODE` path containing
 spaces, junction resolution, UTF-8 round trips (`forêt 世界 😀`), invalid Node
-startup, and a five-second timeout that terminated, killed, waited, and closed a
-real hanging child. These were automated headless checks, not manual GUI tests.
+startup, and hanging-child cleanup. Iteration 6 verified immediate startup and
+status checks, collection, cancellation and native disposal with the actual
+installed Tiled. These were automated headless checks, not manual GUI tests.
 This runtime also requires `catch (error)` rather than optional catch bindings.
 
 **Manual GUI confirmation and one-step undo/redo remain unverified.** Use a
@@ -400,18 +409,16 @@ disposable map and the existing junction installation:
 1. Start a fresh Tiled instance with Node on PATH or `TILED_AI_NODE` configured.
 2. Open the Console, select a writable tile layer, and select a rectangle with
    tiles and empty cells.
-3. Invoke **AI: Generate… (Prototype)**, enter `fill empty cells`, and confirm.
+3. Invoke **AI: Generate… (Prototype)**, enter `fill empty cells`, click
+   **Check Status**, and confirm when ready.
 4. Verify only empty cells filled. Undo once, then redo once.
 5. Repeat and decline confirmation; verify nothing changes.
 6. Enter `noop`, then blank input; verify neither creates an edit.
 7. Enter an unsupported instruction; verify a clear error and no changes.
 8. Launch a fresh Tiled with an invalid `TILED_AI_NODE` and verify the startup
    error. Restore the variable and restart Tiled.
-9. For failure testing only, back up `planner/src/cli.mjs` outside `src/`, replace
-   its contents with `process.stdout.write("not JSON")`, and verify rejection.
-10. Replace its contents with `process.stdin.resume(); setInterval(() => {}, 1000)`
-    and verify timeout recovery. Restore the exact original CLI afterwards.
-11. Invoke the normal action again without reinstalling the extension. If
+9. Use the iteration-6 fake planner below for malformed output, delays and hangs.
+10. Invoke the normal action again without reinstalling the extension. If
     convenient, use non-ASCII tileset names and confirm the round trip.
 
 ## Semantic tile catalog (iteration 4)
@@ -591,19 +598,20 @@ meaning. Check **Map → AI: Inspect Tile Catalog**. Then select a rectangle on 
 writable tile layer and choose **Map → AI: Generate… (Prototype)**.
 Enter, for example, `Create a small pond surrounded by grass.`
 
-**Tiled may be unresponsive during generation for up to 30 seconds, plus brief
-process cleanup.** This iteration uses the existing synchronous bridge.
+**Generation is non-blocking as of iteration 6.** Use **Check Status** to collect
+the result or **Cancel** to stop it. The confirmation dialog opens only after
+collection and successful validation.
 
 | Model-mode limit | Value |
 | --- | --- |
 | Selected cells / proposed edits | 256 / 256 |
 | Summary / reason length | 300 / 500 UTF-16 code units |
 | API attempts | 1, automatic retries disabled |
-| API timeout / Tiled process wait | 30 seconds each (the process wait also includes startup) |
+| API timeout | 30 seconds; Node hard watchdog at 32 seconds |
 
 The existing 2,000-character instruction and 1 MiB transport limits still apply.
 Limits live in `src/core/model-limits.mjs`. Deterministic mode retains its
-4,096-cell cap and 5-second process wait.
+4,096-cell cap and uses the same non-blocking job workflow.
 
 The model receives the instruction, selection width/height, occupied/empty cell
 matrix, and catalog names/descriptions/tags. It receives no map-space origin,
@@ -641,7 +649,8 @@ as HTML or used to control execution.
 2. Select an empty 8 × 8 rectangle on a writable tile layer.
 3. Choose **Map → AI: Generate… (Prototype)** and enter
    `Create a small pond surrounded by grass.`
-4. Check the summary, count, and layer; choose **Cancel**. Verify no map change.
+4. Click **Check Status** until ready. Check the summary, count, and layer;
+   choose **Cancel**. Verify no map change.
 5. Run again and choose **Apply**. Verify only selected empty cells change and
    every placed tile comes from the catalog. Repeat with an occupied cell to
    check it remains untouched.
@@ -680,6 +689,165 @@ manual acceptance test above.** No credentials were accessed or API request made
 during implementation. Terrain transitions and visual tile interpretation are
 outside this iteration.
 
+## Non-blocking generation (iteration 6)
+
+Only one job may exist at a time. Start **Map → AI: Generate… (Prototype)**,
+enter an instruction, and continue working. The status window is non-modal:
+
+- **Check Status / Check Again** checks once and returns immediately if running.
+- **Cancel**, or the window's **X**, stops a running job and releases it.
+- **Dismiss** clears a failed or stale job; **Discard** clears a ready result.
+- A completed, valid result opens the existing confirmation dialog. Nothing
+  applies automatically. One Apply remains one undoable `TileLayerEdit`.
+
+There is no automatic status polling or desktop notification. Even if Node has
+finished, the dialog remains unchanged until you click Check Status. A second
+Generate attempt is rejected until the first job is applied, discarded, cancelled
+or dismissed. Jobs are not restored after restarting Tiled or reloading extensions.
+
+### Relevant context and map lifecycle
+
+Jobs capture the original map, tile layer and rectangle. You may change selection,
+select another layer, rename the target layer, edit cells outside that rectangle,
+pan, save, or switch maps while generation runs. None of these alone makes the
+result stale. If another map is active when the result arrives, the dialog asks
+you to return to the original map and click **Review Result**; it never switches
+maps silently.
+
+Before confirmation and again before Apply, the extension compares a normalized
+snapshot of the captured cells, their flip/rotation flags, map orientation and
+tile size, and any catalog sent to the planner (including metadata and name-to-ID
+resolution). Catalog and tag ordering are normalized. No context padding is sent
+in the current protocol. Flags are captured locally without changing the model's
+input schema. The executor still checks empty targets, layer locks, read-only
+state, valid tiles and the whole numeric plan.
+
+Changing relevant contents or catalog data makes the result stale. Deleting or
+replacing the target layer also blocks application. Closing or reloading the
+target map cancels/discards the job and cleans up the process. A map lifecycle
+event during confirmation also prevents application. No automatic regeneration
+occurs; start a new job explicitly when ready.
+
+### Deadlines, errors and Windows compatibility
+
+The API retains its 30-second timeout and zero retries. A referenced Node watchdog
+forces exit at 32 seconds even if a provider promise never settles. When possible,
+it emits a correlated `TIMEOUT` error response with no plan. After normal output
+drains, Node exits explicitly so stray provider handles cannot keep it alive.
+If Check Status finds a still-running child older than 35 seconds, Tiled stops it.
+That check is a cleanup backstop; the Node watchdog works even when you never
+click the dialog. Cancellation waits at most 250 ms after terminate, then kills
+and waits at most another 250 ms.
+
+Stdout must contain one protocol response, at most 1 MiB. Stderr retention is
+bounded to at most 16 KiB (the character cap is conservative for Unicode).
+Raw stderr/provider content is never shown or logged by this path. Fixed messages
+explain configuration, network, refusal, timeout, invalid-result and stale-target
+failures. Qt's internal pipe buffers cannot be byte-capped through this API; the
+size limit is enforced when collecting output, not as a bound on Qt memory.
+
+Two verified Tiled 1.11.2 / Qt 6.8.1 behaviors require small adapter exceptions
+to the illustrative handout:
+
+1. `waitForFinished(0)` returns **false if the process already exited** and Qt
+   handled that completion. Therefore the fixed launcher changes successful
+   OS exit status to **73**. The adapter checks once with `waitForFinished(0)`
+   and also inspects the completed exit code; it translates 73 back to logical
+   success 0. The standalone CLI still uses 0. No completion marker is mixed
+   into stdout, and `atEnd` is never used to infer process completion.
+2. Calling `Process.close()` explicitly causes its native destructor to close
+   again and throw into the script engine. Logical disposal is idempotent,
+   clears the retained wrapper, and stops a live child; the native destructor
+   owns the single actual close. This preserves the earlier repeated-action fix.
+
+The adapter follows the [Tiled Process API](https://www.mapeditor.org/docs/scripting/classes/Process.html)
+and [Dialog API](https://www.mapeditor.org/docs/scripting/classes/Dialog.html), with
+these workarounds verified against installed Tiled and its
+[native Process implementation](https://github.com/mapeditor/tiled/blob/v1.11.2/src/tiled/scriptprocess.cpp).
+`Process.start()` itself waits for OS process startup internally; it does not wait
+for planning. Only cancellation has short bounded waits. Status uses zero-timeout
+checks and no script loop.
+
+### Offline delayed/hanging planner
+
+Close Tiled, then launch from PowerShell with explicit test mode:
+
+```powershell
+$env:TILED_AI_PROVIDER = 'deterministic'
+$env:TILED_AI_TEST_MODE = '1'
+$env:TILED_AI_FAKE_RESULT = 'valid'
+$env:TILED_AI_FAKE_DELAY_MS = '5000'
+& 'C:\Program Files\Tiled\tiled.exe'
+```
+
+The fixed launcher selects `planner/fixtures/fake-planner.mjs` only in this test
+mode. It never calls a model. Use `fill empty` on a region containing a source
+tile, `fill empty with terrain:grass` with a valid catalog, or `noop`.
+
+Available results: `valid`, `malformed`, `multiple`, `exit`, `mismatch`,
+`oversized`, `timeout`, `hang`, and `watchdog`. `hang` deliberately ignores the
+normal Node deadline so Cancel and the 35-second Tiled backstop can be tested.
+`watchdog` uses an unresolved injected planner and a short test-only deadline.
+The fixture also accepts `--delay-ms` and `--result` arguments when run directly
+with a request piped to stdin. It is excluded from automatic test discovery.
+
+Remove test settings and fully restart Tiled to return to normal planning:
+
+```powershell
+Remove-Item Env:TILED_AI_TEST_MODE, Env:TILED_AI_FAKE_RESULT, Env:TILED_AI_FAKE_DELAY_MS -ErrorAction SilentlyContinue
+```
+
+### Manual acceptance checklist
+
+1. Start a delayed valid job. Pan/edit elsewhere and click Check Status before
+   completion: it should report still running without freezing the editor.
+2. Check after completion, cancel confirmation once, then repeat and Apply.
+   Verify exactly one Undo restores all generated edits.
+3. Repeat while changing selection/current layer and editing outside the captured
+   rectangle. Confirm the original region remains eligible for application.
+4. Repeat while editing a captured cell, flipping an existing tile, or changing a
+   catalog annotation. Confirm a stale message, no generated edits, and Dismiss.
+5. Switch to another map before collecting. Verify Review Result asks you to
+   return; it must not switch maps or apply to the other map.
+6. Run `hang`. Cancel, then start a new job. Repeat using X. Both should stop
+   promptly and leave the map untouched.
+7. Close/reload the target map during a delayed job; verify it cannot be applied.
+   Delete the target layer during another job; collect and confirm it is stale.
+8. Try malformed/mismatched output and the timeout fixture. Verify no edits.
+9. Remove test mode before an optional live OpenAI check. Check responsiveness,
+   collection, declined confirmation, then Apply and one-step Undo.
+
+### Implementation report
+
+- Core: `job-controller.mjs` owns the state machine; `context-fingerprint.mjs`
+  normalizes relevant data; `job-response.mjs` validates success/error envelopes;
+  `job-errors.mjs` centralizes categories, deadlines and transport limits.
+- Tiled: `planner-process.mjs` retains a non-blocking runner;
+  `generation-dialog.mjs` owns status controls; `job-lifecycle.mjs` connects
+  snapshots, asset signals, review and application. `generate-action.mjs`,
+  `map-reader.mjs` and `edit-applier.mjs` now support a captured target without
+  depending on the editor's current selection.
+- Node: `cli-runner.mjs`, `watchdog.mjs` and the small `cli.mjs` entry point own
+  process deadlines and correlated errors. `planner/fixtures/fake-planner.mjs`
+  provides offline delay/failure modes.
+- Tests cover pure transitions/fingerprints, Tiled adapter lifecycle, stale targets,
+  dialog cancellation and real Node pipe/process integration. Existing provider
+  schema/prompt/compiler tests remain offline and unchanged.
+
+Baseline: **134 tests**. Current result: **177 offline tests passing**. Commands:
+`npm test`, `npm run check`, `npx --yes --package typescript tsc --project jsconfig.json`,
+and `git diff --check`.
+
+Installed Tiled 1.11.2 smoke verification: initial check returned unfinished,
+later collection produced two valid edits, hanging-child cancellation took about
+260 ms, repeated disposal/GC succeeded, and programmatic non-modal dialog closure
+did not recursively cancel. A lifecycle smoke check with a real in-memory map
+and layer also completed a no-op after a layer rename (editor asset signals were
+supplied by a small fixture). No map files were saved or real API calls made.
+**Interactive responsiveness, Apply/Cancel and one-step editor Undo remain manual
+acceptance checks.** There are no automatic polls, persisted jobs, concurrent jobs,
+or previews; preview rendering is deferred to iteration 7.
+
 ## Planned direction
 
 - **v0.1–v0.2 (implemented in iteration 1):** inspect one rectangular selection
@@ -690,8 +858,8 @@ outside this iteration.
   with response validation and confirmation.
 - **Iteration 4 (implemented):** semantic tile catalog and exact named-tile fills.
 - **Iteration 5 (implemented):** optional OpenAI semantic planning behind the process boundary.
-- **Next:** non-blocking generation with cancellation if network latency is disruptive.
-- **v0.6:** selection-aware generation and preview.
+- **Iteration 6 (implemented):** non-blocking single-job workflow with cancellation and stale-result checks.
+- **Iteration 7:** preview rendering for ready, validated plans.
 
 The extension stays thin. The local Node planner handles prompts, model access,
 and planning; the extension inspects maps, validates edits, and applies changes.
