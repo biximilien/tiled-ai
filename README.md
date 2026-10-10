@@ -12,6 +12,8 @@ fill selected empty cells with the most common tile in the selection.
 to a one-shot local Node planner, then opens visual review before Apply.
 Tiles annotated with `ai_name` can now be selected by exact semantic name using
 `fill empty with grass` or `fill empty with terrain:grass`.
+**Map → AI: Analyze Tileset…** can propose annotations from atlas images, then
+save reviewed entries to a project-local sidecar. See [tileset analysis](#tileset-analysis-and-annotation-review).
 
 ## Requirements
 
@@ -989,6 +991,224 @@ The rendering milestone therefore remains partially verified; headless resource
 checks and mock tests cannot establish actual viewport behavior. In particular,
 the manual toolbar/Enter workflow needs confirmation in the editor. No live API
 request was made and no commit was created.
+
+## Tileset analysis and annotation review
+
+Analyze Tileset helps make an unannotated atlas usable by the existing generator.
+It proposes descriptions; it does not paint maps, change tile properties, or
+write TMX/TSX files. Only explicitly saved, accepted, eligible entries reach the
+generation catalog.
+
+### Setup and workflow
+
+Update the Node-only dependencies, then restart Tiled or reload extensions:
+
+```powershell
+npm ci --prefix planner
+```
+
+Use the existing `TILED_AI_PROVIDER=openai`, `OPENAI_API_KEY`, and `OPENAI_MODEL`
+configuration. The configured model must support **image input and Responses
+Structured Outputs**. There is no automatic model substitution. Deterministic
+generation remains unchanged; real image analysis requires OpenAI mode. Explicit
+test mode, described below, uses fixed offline suggestions.
+
+1. Open a saved map referencing a **saved external regular-atlas tileset**. Save
+   pending tileset edits first. Keep both the tileset and atlas inside the project.
+2. Choose **Map → AI: Analyze Tileset…**. Select a tileset, local tile IDs/ranges
+   such as `0-31,40,42`, and batch size (default 32). At most 256 selected tiles
+   are analyzed per run. For larger sets, explicitly choose another subset later.
+3. Choose **Prepare local thumbnails**, then **Check Status**. This stage is local.
+   The next window shows the total/selected counts, number requiring analysis,
+   planned batches, provider and model. It explains the image transfer.
+4. **Start analysis** sends labeled tiles, bounded neighboring atlas crops and
+   imported metadata to the chosen provider. Requests run sequentially, with no
+   automatic retry. **Check Status** collects the result; **Cancel/X** stops the
+   active session. Generation and analysis share one job/review slot.
+5. Review two labeled thumbnails per page. Filter by category or **Needs review**,
+   choose a tile, and edit its name, description, tags, category or placement role.
+   Imported facts, existing accepted text and new suggestions remain separately
+   visible as plain text. Manual fields are disabled in the editor and remain
+   authoritative.
+6. **Accept selected** or **Accept group** records reviewed values in memory.
+   **Reject selected** retains the entry for inspection but excludes its sidecar
+   annotation from generation. **Keep edits pending** records a user-edited proposal;
+   it does not approve it. Save also preserves pending proposals separately. Use
+   Accept to make a corrected standalone annotation eligible for generation.
+7. **Save Accepted** writes the sidecar. Wait for Check Status to confirm the save.
+   Closing review without saving leaves the accepted file unchanged. A failed
+   save retains the current review. A completed save is not undone by closing.
+8. Close analysis review, then use **AI: Inspect Tile Catalog** or normal Generate.
+   For the fixture, accepted `grass` and `water` become usable with commands such
+   as `fill empty with analysis-fixture:grass`. Generation still uses its existing
+   validated plan, preview and Apply workflow.
+
+Partial successes remain **suggested**, never automatically accepted. The review
+shows failed batch IDs and error codes. **Retry failed / analyze remaining** is an
+explicit new request; valid cached entries are reused without model calls. Pending
+user corrections survive retries, and survive reopening when saved. Closing without
+saving discards unsaved review choices.
+
+### Authority and generation eligibility
+
+Each descriptive field merges independently: manual tile property, then fresh
+accepted sidecar value, then no value. Pending suggestions are review-only.
+Property absence differs from an intentionally empty string. Existing manual
+annotation validation and eligibility are preserved.
+
+| Accepted sidecar role | Automatically available to generation? |
+| --- | --- |
+| `standalone` | Yes, with a valid unique name |
+| `terrain_transition` | No; descriptive only |
+| `object_fragment` | No |
+| `animation_frame` | No |
+| `empty` / `unknown` | No |
+
+A reviewer may correct a role and accept that correction. Imported animation
+membership prevents frames from defaulting to unrelated standalone objects.
+Existing explicit manual annotations retain their earlier behavior regardless
+of an inferred role. Collision geometry is stored as `hasCollisionGeometry`;
+it does not create walkability or other gameplay rules.
+
+Local tile ID plus normalized project-relative tileset path forms the identity.
+Display names are not identity keys. Colliding proposals receive deterministic
+aliases such as `grass_variant_12`; IDs remain distinct. Manual aliases are never
+renamed automatically. Accept/Save checks user aliases against manual and other
+accepted aliases. Ambiguous tileset display names block analysis/catalog use.
+
+### Storage, freshness and conflicts
+
+The project root is the saved Tiled project's directory, or the saved map's
+directory when no project is open. Sources outside this root are not analyzed.
+Create/open a project encompassing shared asset folders when necessary.
+
+- Accepted catalog: `.tiled-ai/catalogs/<SHA256-of-relative-tileset-path>.json`.
+  This durable file is suitable for version control. Nothing is installed into
+  TMX/TSX or custom tile properties.
+- Disposable cache: `.tiled-ai/cache/`, ignored by this repository. It contains
+  exact alpha-preserving crops, enlarged review thumbnails, proposal cache and
+  bounded job-result JSON. No raw provider-response cache is kept.
+- Schema 1 sidecars keep accepted and proposed records separately, including
+  source facts, per-field provenance, provider/model, configuration/version
+  fingerprints, evidence hashes and review state. They contain no credentials
+  or machine-absolute source paths.
+- Freshness uses SHA-256 of the **entire source tileset file, entire atlas file,
+  and extracted metadata/geometry**. Any relevant change conservatively invalidates
+  sidecar-derived generation entries, including changes outside the selected tile.
+  Accepted text/corrections survive for review. Move/rename requires fresh analysis;
+  there is no automatic path rebind.
+- Proposal cache keys also cover provider/model, batch size and prompt/schema/
+  preprocessor versions. Evidence hashes include contact sheets and context crops.
+  Unchanged reruns reuse proposals. Accepted corrections are not replaced by new
+  model text before review.
+- Save uses an exclusive writer lock, a same-directory temporary file, flush/fsync,
+  a last source/revision check, and rename replacement. Windows replacement and
+  failure/conflict preservation were tested. A changed sidecar revision rejects
+  the save; retrying analysis cannot adopt a newer revision and silently overwrite
+  it with older review choices.
+
+The lock coordinates this extension's writers. Arbitrary external editors do not
+participate in that lock; the content comparison is immediately before replacement,
+not a filesystem-wide transaction with every editor. Avoid simultaneous edits to
+the sidecar during Save. Cancellation or a process crash during a save can leave a
+`.lock`/`.tmp` file; remove only those files after confirming no analysis/save process
+is running. The accepted file is never truncated in place.
+
+Corrupt/mismatched/unsupported sidecars produce a diagnostic instead of becoming
+trusted planner input. Stale entries are excluded while existing manual entries
+remain available. Freshness checks use bounded synchronous local file reads in
+Tiled; image processing and all provider work run in Node.
+
+### Supported geometry and limits
+
+- One external TSX/JSON regular atlas per job. Embedded tilesets and image
+  collections are explicitly rejected. Existing manual catalog support for those
+  tilesets is unchanged.
+- PNG, WebP, JPEG and TIFF atlases; alpha transparency and saved color-key
+  transparency are handled. Animated image files are rejected; Tiled tile
+  animation metadata is preserved.
+- Non-square tiles, nonzero margin/spacing and actual loaded tile IDs are used.
+  Every crop is bounds-checked. Transparent cells are marked empty without a
+  model request. Identical-looking cells remain distinct.
+- Up to 4,096 loaded atlas tiles, 256 selected tiles per run, 32 per batch,
+  256 pixels per tile dimension, 16 megapixels decoded atlas area, and 16 MiB
+  encoded source files. Contact sheets are at most 832 × 496 pixels. Each tile's
+  neighboring context is resized within 192 × 192 pixels, with its atlas crop
+  origin supplied separately.
+- Exact crops retain alpha. Model images use a neutral background and nearest-
+  neighbor scaling, with ID labels in separate gutters. Model request content is
+  limited to 4 MiB. Sidecar/request/artifact JSON is capped at 1 MiB; stdout only
+  carries a correlated operation envelope capped at 4 KiB by the Tiled reader.
+- Per-provider-request deadline: 30 seconds, zero retries. Total worker deadline:
+  `20 seconds + ceil(selected tiles / batch size) × 32 seconds`; the Tiled status
+  backstop adds 3 seconds. This deliberately differs from one-map generation's
+  shorter deadline. No percentage/progress polling is claimed.
+
+The Node-only image dependency is **sharp 0.35.5**; saved TSX transparency/metadata
+uses **fast-xml-parser 5.11.2** with DTD rejection. API construction follows the
+[OpenAI image-input guide](https://developers.openai.com/api/docs/guides/images-vision)
+and [Structured Outputs guide](https://developers.openai.com/api/docs/guides/structured-outputs).
+Preprocessing uses [sharp's extract/nearest-resize API](https://sharp.pixelplumbing.com/api-resize/).
+The review uses native [Tiled Dialog image and input controls](https://www.mapeditor.org/docs/scripting/classes/Dialog.html).
+
+### Offline fixture and remaining manual acceptance
+
+Install dependencies, fully exit Tiled, then launch:
+
+```powershell
+$env:TILED_AI_TEST_MODE = '1'
+& 'C:\Program Files\Tiled\tiled.exe'
+```
+
+Use `tests/fixtures/analysis/map.tmx` with its neighboring `atlas.tsx`/`atlas.png`.
+Copy the fixture folder inside your current project, or open it without another
+project active. `example.catalog.json` illustrates the schema and is deliberately
+not installed as an active sidecar. [Fixture evaluation notes](tests/fixtures/analysis/EVALUATION.md)
+describe the visually inspected synthetic tiles and accuracy/review-effort worksheet.
+
+1. Analyze all loaded fixture IDs. Inspect the labeled pages and accept grass/water
+   standalone entries. Retain fragment, transition, empty and animation roles.
+2. Save, close review, reload extensions/restart, then inspect the semantic catalog.
+   Generate an empty rectangle, review the overlay, Apply, and check Undo/Redo.
+3. Correct an accepted alias/description, Save, and analyze again; verify it remains.
+   Add an explicit manual annotation and verify its fields take precedence.
+4. Re-run unchanged; verify zero planned model batches. Modify source art or relevant
+   metadata, save/reload, and verify stale annotations are excluded until reviewed.
+5. Cancel a run, close/reload its target, and try an external sidecar edit before Save.
+   Confirm no source-file edits, silent overwrites, or application to another target.
+6. Use the existing OpenAI configuration for an optional real-provider evaluation;
+   unset `TILED_AI_TEST_MODE` and restart first. Record classification mistakes and
+   correction time separately from test pass/fail.
+
+**Verification:** baseline 195 tests; **223 offline tests pass**. Syntax, TypeScript
+and whitespace checks pass. Coverage includes crop pixels/gutters, alpha/color key,
+partial batches and explicit retries, cache/config/source invalidation, manual
+precedence, role eligibility, alias collisions, atomic-save failures/conflicts,
+actual catalog loading, native-control mocks and operation/cancellation boundaries.
+The SDK is tested with an offline HTTP transport; no real model request was made.
+
+Implementation entry points: `src/tiled/analysis-action.mjs` owns the action and
+job lifecycle; `analysis-review-dialog.mjs` owns thumbnail review;
+`src/core/analysis-catalog.mjs` defines review, provenance and eligibility rules.
+The Node pipeline lives in `planner/src/tileset-analysis.mjs`, with image extraction,
+provider requests and atomic storage in separate modules. Offline coverage lives in
+`planner/test/analysis.test.mjs` and `tests/analysis-ui.test.mjs`.
+
+Tiled **1.11.2 / Qt 6.8.1** headless checks verified metadata extraction, labeled
+image controls, selection/text editing, page reconstruction, the real Node process
+transport and full review-dialog construction/cleanup. Repeat the probe with:
+
+```powershell
+$env:TILED_AI_TEST_MODE = '1'
+& 'C:\Program Files\Tiled\tiled.exe' --evaluate scripts/analysis-ui-probe.mjs "$env:TEMP\tiled-analysis-probe.json" process
+Get-Content "$env:TEMP\tiled-analysis-probe.json"
+```
+
+**Interactive dialog layout, restart-to-generation acceptance, and real-model
+classification accuracy remain unverified.** Computer Use could not connect to its
+native pipe. The contact sheet itself was visually inspected; that is separate
+from native UI acceptance. No accuracy or human review-time claim is made. No git
+commit was created.
 
 ## Planned direction
 

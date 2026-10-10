@@ -1,3 +1,4 @@
+import { sidecarAnnotations, mergeManual } from "./analysis-source.mjs";
 import { isTileMapAsset } from "../core/validation.mjs";
 import { SelectionError } from "./map-reader.mjs";
 import { CatalogError, requireTileCatalog } from "../core/tile-catalog.mjs";
@@ -24,9 +25,13 @@ export function buildTileCatalog(asset) {
     /** @type {import('../core/tile-catalog.mjs').CatalogTile[]} */
     const tiles = [];
     const seenNames = new Set();
+    let annotations = new Map();
+    try { annotations = sidecarAnnotations(map, set); }
+    catch (error) { diagnostics.push({severity:"error",tileset:set.name,property:"sidecar",code:"invalid_sidecar",message:error instanceof Error ? error.message : "Invalid sidecar."}); }
     // The collection includes sparse/image-collection IDs; never iterate 0..tileCount.
     for (const tile of set.tiles.slice().sort((a, b) => a.id - b.id)) {
-      const result = normalizeTileMetadata(tile.property("ai_name"), tile.property("ai_description"), tile.property("ai_tags"));
+      const merged = mergeManual({name:tile.property("ai_name"),description:tile.property("ai_description"),tags:tile.property("ai_tags")}, annotations.get(tile.id) || null);
+      const result = normalizeTileMetadata(merged.name, merged.description, merged.tags);
       for (const diagnostic of result.diagnostics) diagnostics.push({
         severity: "error", tileset: set.name, tileId: tile.id,
         property: diagnostic.property, code: diagnostic.code, message: diagnostic.message,

@@ -6,3 +6,6 @@ coverage/
 *.log
 .DS_Store
 Thumbs.db
+**/.tiled-ai/cache/
+**/.tiled-ai/catalogs/*.tmp
+**/.tiled-ai/catalogs/*.lock

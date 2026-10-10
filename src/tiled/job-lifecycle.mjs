@@ -1,3 +1,4 @@
+import { requireFreeJobSlot, acquireJobSlot, releaseJobSlot } from "../core/job-slot.mjs";
 import { JobController } from "../core/job-controller.mjs";
 import { JobError, safeJobError } from "../core/job-errors.mjs";
 import { fingerprintContext } from "../core/context-fingerprint.mjs";
@@ -26,6 +27,7 @@ export function generationState() { return session ? session.controller.state : 
 export function requireIdleGeneration() {
   if (session && session.review) throw new JobError("still_running", "A tile review is pending. Use Apply, Discard, or Regenerate in AI tile review.");
   if (session) throw new JobError("still_running", "An AI generation job is already running.");
+  requireFreeJobSlot();
 }
 
 /** @param {Layer[]} layers @param {number} id @returns {Layer|null} */
@@ -67,6 +69,7 @@ function clearSession(current) {
   if (current.dialog) current.dialog.close();
   current.dialog = null;
   current.controller.clear();
+  releaseJobSlot(current);
   session = null;
 }
 
@@ -183,6 +186,7 @@ export function startGeneration(request, map, layer, extensionFile) {
   controller.start(request, fingerprint);
   /** @type {Session} */
   const current = { controller, map, layer, dialog: null, review: null, reviewUI: null, unbind: () => {}, extensionFile, disconnect: () => {} };
+  acquireJobSlot(current);
   session = current;
   try {
     const invalidate = (/** @type {Asset} */ asset) => {

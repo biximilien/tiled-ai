@@ -43,8 +43,14 @@ export function plannerLaunchArguments(extensionFile) {
  * @param {{createProcess?:()=>Process, arguments?:string[]}} [host]
  * @returns {import('../core/job-controller.mjs').Runner} */
 export function startPlanner(request, extensionFile, host = {}) {
-  const input = serializePlannerRequest(request);
-  const args = host.arguments || plannerLaunchArguments(extensionFile);
+  return startJsonProcess(serializePlannerRequest(request), host.arguments || plannerLaunchArguments(extensionFile), host);
+}
+
+/** Shared nonblocking transport; operation-specific callers serialize/validate.
+ * @param {string} input @param {string[]} args
+ * @param {{createProcess?:()=>Process}} [host]
+ * @returns {import('../core/job-controller.mjs').Runner} */
+export function startJsonProcess(input, args, host = {}) {
   /** @type {Process|null} */
   let child = host.createProcess ? host.createProcess() : new Process();
   /** @type {'starting'|'running'|'finished'|'disposed'} */

@@ -1,0 +1,45 @@
+{
+  "note": "Synthetic fixture author intent, not a live-model accuracy measurement. Human review still required.",
+  "tiles": [
+    {
+      "tileId": 0,
+      "appearance": "grass interior",
+      "role": "standalone"
+    },
+    {
+      "tileId": 1,
+      "appearance": "water interior",
+      "role": "standalone"
+    },
+    {
+      "tileId": 2,
+      "appearance": "grass/water corner",
+      "role": "terrain_transition"
+    },
+    {
+      "tileId": 3,
+      "appearance": "tree fragment with collision geometry",
+      "role": "object_fragment"
+    },
+    {
+      "tileId": 4,
+      "appearance": "transparent",
+      "role": "empty"
+    },
+    {
+      "tileId": 5,
+      "appearance": "animated water",
+      "role": "animation_frame"
+    },
+    {
+      "tileId": 6,
+      "appearance": "water frame",
+      "role": "animation_frame"
+    },
+    {
+      "tileId": 7,
+      "appearance": "building fragment",
+      "role": "object_fragment"
+    }
+  ]
+}

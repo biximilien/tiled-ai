@@ -1,0 +1,755 @@
+{
+  "schemaVersion": 1,
+  "tilesetKey": "atlas.tsx",
+  "analysisVersion": "vision-1/preprocess-1/schema-1",
+  "entries": [
+    {
+      "tileId": 4,
+      "state": "accepted",
+      "accepted": {
+        "values": {
+          "tileId": 4,
+          "suggestedName": null,
+          "description": "Fully transparent atlas cell.",
+          "category": "empty",
+          "tags": [],
+          "placementRole": "empty",
+          "uncertaintyReason": null
+        },
+        "facts": {
+          "tileId": 4,
+          "manual": {},
+          "className": "",
+          "hasCollisionGeometry": false,
+          "frames": [],
+          "animationMember": false,
+          "wang": []
+        },
+        "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+        "evidenceHash": "ae70f21b8152317793982fcbda7e8496cef4894bbb880232f4078678afe96ca9",
+        "provenance": {
+          "provider": "deterministic",
+          "model": "alpha-test",
+          "version": "vision-1/preprocess-1/schema-1",
+          "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+          "configurationHash": "b0cc1f86352b5beb66b1e5fef25708566b13b9c5425c469d035eb3c53b1992a4",
+          "fields": {
+            "suggestedName": "reviewed",
+            "description": "reviewed",
+            "category": "reviewed",
+            "tags": "reviewed",
+            "placementRole": "reviewed",
+            "uncertaintyReason": "reviewed"
+          }
+        }
+      },
+      "proposed": {
+        "values": {
+          "tileId": 4,
+          "suggestedName": null,
+          "description": "Fully transparent atlas cell.",
+          "category": "empty",
+          "tags": [],
+          "placementRole": "empty",
+          "uncertaintyReason": null
+        },
+        "facts": {
+          "tileId": 4,
+          "manual": {},
+          "className": "",
+          "hasCollisionGeometry": false,
+          "frames": [],
+          "animationMember": false,
+          "wang": []
+        },
+        "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+        "evidenceHash": "ae70f21b8152317793982fcbda7e8496cef4894bbb880232f4078678afe96ca9",
+        "provenance": {
+          "provider": "deterministic",
+          "model": "alpha-test",
+          "version": "vision-1/preprocess-1/schema-1",
+          "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+          "configurationHash": "b0cc1f86352b5beb66b1e5fef25708566b13b9c5425c469d035eb3c53b1992a4",
+          "fields": {
+            "suggestedName": "deterministic",
+            "description": "deterministic",
+            "category": "deterministic",
+            "tags": "deterministic",
+            "placementRole": "deterministic",
+            "uncertaintyReason": "deterministic"
+          }
+        }
+      }
+    },
+    {
+      "tileId": 8,
+      "state": "accepted",
+      "accepted": {
+        "values": {
+          "tileId": 8,
+          "suggestedName": null,
+          "description": "Fully transparent atlas cell.",
+          "category": "empty",
+          "tags": [],
+          "placementRole": "empty",
+          "uncertaintyReason": null
+        },
+        "facts": {
+          "tileId": 8,
+          "manual": {},
+          "className": "",
+          "hasCollisionGeometry": false,
+          "frames": [],
+          "animationMember": false,
+          "wang": []
+        },
+        "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+        "evidenceHash": "ae70f21b8152317793982fcbda7e8496cef4894bbb880232f4078678afe96ca9",
+        "provenance": {
+          "provider": "deterministic",
+          "model": "alpha-test",
+          "version": "vision-1/preprocess-1/schema-1",
+          "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+          "configurationHash": "b0cc1f86352b5beb66b1e5fef25708566b13b9c5425c469d035eb3c53b1992a4",
+          "fields": {
+            "suggestedName": "reviewed",
+            "description": "reviewed",
+            "category": "reviewed",
+            "tags": "reviewed",
+            "placementRole": "reviewed",
+            "uncertaintyReason": "reviewed"
+          }
+        }
+      },
+      "proposed": {
+        "values": {
+          "tileId": 8,
+          "suggestedName": null,
+          "description": "Fully transparent atlas cell.",
+          "category": "empty",
+          "tags": [],
+          "placementRole": "empty",
+          "uncertaintyReason": null
+        },
+        "facts": {
+          "tileId": 8,
+          "manual": {},
+          "className": "",
+          "hasCollisionGeometry": false,
+          "frames": [],
+          "animationMember": false,
+          "wang": []
+        },
+        "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+        "evidenceHash": "ae70f21b8152317793982fcbda7e8496cef4894bbb880232f4078678afe96ca9",
+        "provenance": {
+          "provider": "deterministic",
+          "model": "alpha-test",
+          "version": "vision-1/preprocess-1/schema-1",
+          "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+          "configurationHash": "b0cc1f86352b5beb66b1e5fef25708566b13b9c5425c469d035eb3c53b1992a4",
+          "fields": {
+            "suggestedName": "deterministic",
+            "description": "deterministic",
+            "category": "deterministic",
+            "tags": "deterministic",
+            "placementRole": "deterministic",
+            "uncertaintyReason": "deterministic"
+          }
+        }
+      }
+    },
+    {
+      "tileId": 0,
+      "state": "accepted",
+      "accepted": {
+        "values": {
+          "tileId": 0,
+          "suggestedName": "grass",
+          "description": "Offline fixture suggestion; review the actual image.",
+          "category": "terrain interiors",
+          "tags": [
+            "grass"
+          ],
+          "placementRole": "standalone",
+          "uncertaintyReason": null
+        },
+        "facts": {
+          "tileId": 0,
+          "manual": {},
+          "className": "",
+          "hasCollisionGeometry": false,
+          "frames": [],
+          "animationMember": false,
+          "wang": []
+        },
+        "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+        "evidenceHash": "79af05c25896bf7ee39d8a4ecb0df22add322786c4cab9138250570bf8682b12",
+        "provenance": {
+          "provider": "fake",
+          "model": "fixture-v1",
+          "version": "vision-1/preprocess-1/schema-1",
+          "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+          "configurationHash": "b0cc1f86352b5beb66b1e5fef25708566b13b9c5425c469d035eb3c53b1992a4",
+          "fields": {
+            "suggestedName": "reviewed",
+            "description": "reviewed",
+            "category": "reviewed",
+            "tags": "reviewed",
+            "placementRole": "reviewed",
+            "uncertaintyReason": "reviewed"
+          }
+        }
+      },
+      "proposed": {
+        "values": {
+          "tileId": 0,
+          "suggestedName": "grass",
+          "description": "Offline fixture suggestion; review the actual image.",
+          "category": "terrain interiors",
+          "tags": [
+            "grass"
+          ],
+          "placementRole": "standalone",
+          "uncertaintyReason": null
+        },
+        "facts": {
+          "tileId": 0,
+          "manual": {},
+          "className": "",
+          "hasCollisionGeometry": false,
+          "frames": [],
+          "animationMember": false,
+          "wang": []
+        },
+        "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+        "evidenceHash": "79af05c25896bf7ee39d8a4ecb0df22add322786c4cab9138250570bf8682b12",
+        "provenance": {
+          "provider": "fake",
+          "model": "fixture-v1",
+          "version": "vision-1/preprocess-1/schema-1",
+          "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+          "configurationHash": "b0cc1f86352b5beb66b1e5fef25708566b13b9c5425c469d035eb3c53b1992a4",
+          "fields": {
+            "suggestedName": "model",
+            "description": "model",
+            "category": "model",
+            "tags": "model",
+            "placementRole": "model",
+            "uncertaintyReason": "model"
+          }
+        }
+      }
+    },
+    {
+      "tileId": 1,
+      "state": "accepted",
+      "accepted": {
+        "values": {
+          "tileId": 1,
+          "suggestedName": "water",
+          "description": "Offline fixture suggestion; review the actual image.",
+          "category": "terrain interiors",
+          "tags": [
+            "water"
+          ],
+          "placementRole": "standalone",
+          "uncertaintyReason": null
+        },
+        "facts": {
+          "tileId": 1,
+          "manual": {},
+          "className": "",
+          "hasCollisionGeometry": false,
+          "frames": [],
+          "animationMember": false,
+          "wang": []
+        },
+        "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+        "evidenceHash": "79af05c25896bf7ee39d8a4ecb0df22add322786c4cab9138250570bf8682b12",
+        "provenance": {
+          "provider": "fake",
+          "model": "fixture-v1",
+          "version": "vision-1/preprocess-1/schema-1",
+          "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+          "configurationHash": "b0cc1f86352b5beb66b1e5fef25708566b13b9c5425c469d035eb3c53b1992a4",
+          "fields": {
+            "suggestedName": "reviewed",
+            "description": "reviewed",
+            "category": "reviewed",
+            "tags": "reviewed",
+            "placementRole": "reviewed",
+            "uncertaintyReason": "reviewed"
+          }
+        }
+      },
+      "proposed": {
+        "values": {
+          "tileId": 1,
+          "suggestedName": "water",
+          "description": "Offline fixture suggestion; review the actual image.",
+          "category": "terrain interiors",
+          "tags": [
+            "water"
+          ],
+          "placementRole": "standalone",
+          "uncertaintyReason": null
+        },
+        "facts": {
+          "tileId": 1,
+          "manual": {},
+          "className": "",
+          "hasCollisionGeometry": false,
+          "frames": [],
+          "animationMember": false,
+          "wang": []
+        },
+        "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+        "evidenceHash": "79af05c25896bf7ee39d8a4ecb0df22add322786c4cab9138250570bf8682b12",
+        "provenance": {
+          "provider": "fake",
+          "model": "fixture-v1",
+          "version": "vision-1/preprocess-1/schema-1",
+          "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+          "configurationHash": "b0cc1f86352b5beb66b1e5fef25708566b13b9c5425c469d035eb3c53b1992a4",
+          "fields": {
+            "suggestedName": "model",
+            "description": "model",
+            "category": "model",
+            "tags": "model",
+            "placementRole": "model",
+            "uncertaintyReason": "model"
+          }
+        }
+      }
+    },
+    {
+      "tileId": 2,
+      "state": "accepted",
+      "accepted": {
+        "values": {
+          "tileId": 2,
+          "suggestedName": "grass_variant_2",
+          "description": "Offline fixture suggestion; review the actual image.",
+          "category": "terrain_transition",
+          "tags": [
+            "grass"
+          ],
+          "placementRole": "terrain_transition",
+          "uncertaintyReason": "Review fragment/transition/animation context."
+        },
+        "facts": {
+          "tileId": 2,
+          "manual": {},
+          "className": "",
+          "hasCollisionGeometry": false,
+          "frames": [],
+          "animationMember": false,
+          "wang": []
+        },
+        "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+        "evidenceHash": "79af05c25896bf7ee39d8a4ecb0df22add322786c4cab9138250570bf8682b12",
+        "provenance": {
+          "provider": "fake",
+          "model": "fixture-v1",
+          "version": "vision-1/preprocess-1/schema-1",
+          "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+          "configurationHash": "b0cc1f86352b5beb66b1e5fef25708566b13b9c5425c469d035eb3c53b1992a4",
+          "fields": {
+            "suggestedName": "reviewed",
+            "description": "reviewed",
+            "category": "reviewed",
+            "tags": "reviewed",
+            "placementRole": "reviewed",
+            "uncertaintyReason": "reviewed"
+          }
+        }
+      },
+      "proposed": {
+        "values": {
+          "tileId": 2,
+          "suggestedName": "grass_variant_2",
+          "description": "Offline fixture suggestion; review the actual image.",
+          "category": "terrain_transition",
+          "tags": [
+            "grass"
+          ],
+          "placementRole": "terrain_transition",
+          "uncertaintyReason": "Review fragment/transition/animation context."
+        },
+        "facts": {
+          "tileId": 2,
+          "manual": {},
+          "className": "",
+          "hasCollisionGeometry": false,
+          "frames": [],
+          "animationMember": false,
+          "wang": []
+        },
+        "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+        "evidenceHash": "79af05c25896bf7ee39d8a4ecb0df22add322786c4cab9138250570bf8682b12",
+        "provenance": {
+          "provider": "fake",
+          "model": "fixture-v1",
+          "version": "vision-1/preprocess-1/schema-1",
+          "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+          "configurationHash": "b0cc1f86352b5beb66b1e5fef25708566b13b9c5425c469d035eb3c53b1992a4",
+          "fields": {
+            "suggestedName": "model",
+            "description": "model",
+            "category": "model",
+            "tags": "model",
+            "placementRole": "model",
+            "uncertaintyReason": "model"
+          }
+        }
+      }
+    },
+    {
+      "tileId": 3,
+      "state": "accepted",
+      "accepted": {
+        "values": {
+          "tileId": 3,
+          "suggestedName": "water_variant_3",
+          "description": "Offline fixture suggestion; review the actual image.",
+          "category": "object_fragment",
+          "tags": [
+            "water"
+          ],
+          "placementRole": "object_fragment",
+          "uncertaintyReason": "Review fragment/transition/animation context."
+        },
+        "facts": {
+          "tileId": 3,
+          "manual": {},
+          "className": "tree-part",
+          "hasCollisionGeometry": true,
+          "frames": [],
+          "animationMember": false,
+          "wang": []
+        },
+        "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+        "evidenceHash": "a40fd430428b65fc790d88de2b80a5f947226b44353feb6f03871f2f352ad243",
+        "provenance": {
+          "provider": "fake",
+          "model": "fixture-v1",
+          "version": "vision-1/preprocess-1/schema-1",
+          "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+          "configurationHash": "b0cc1f86352b5beb66b1e5fef25708566b13b9c5425c469d035eb3c53b1992a4",
+          "fields": {
+            "suggestedName": "reviewed",
+            "description": "reviewed",
+            "category": "reviewed",
+            "tags": "reviewed",
+            "placementRole": "reviewed",
+            "uncertaintyReason": "reviewed"
+          }
+        }
+      },
+      "proposed": {
+        "values": {
+          "tileId": 3,
+          "suggestedName": "water_variant_3",
+          "description": "Offline fixture suggestion; review the actual image.",
+          "category": "object_fragment",
+          "tags": [
+            "water"
+          ],
+          "placementRole": "object_fragment",
+          "uncertaintyReason": "Review fragment/transition/animation context."
+        },
+        "facts": {
+          "tileId": 3,
+          "manual": {},
+          "className": "tree-part",
+          "hasCollisionGeometry": true,
+          "frames": [],
+          "animationMember": false,
+          "wang": []
+        },
+        "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+        "evidenceHash": "a40fd430428b65fc790d88de2b80a5f947226b44353feb6f03871f2f352ad243",
+        "provenance": {
+          "provider": "fake",
+          "model": "fixture-v1",
+          "version": "vision-1/preprocess-1/schema-1",
+          "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+          "configurationHash": "b0cc1f86352b5beb66b1e5fef25708566b13b9c5425c469d035eb3c53b1992a4",
+          "fields": {
+            "suggestedName": "model",
+            "description": "model",
+            "category": "model",
+            "tags": "model",
+            "placementRole": "model",
+            "uncertaintyReason": "model"
+          }
+        }
+      }
+    },
+    {
+      "tileId": 5,
+      "state": "accepted",
+      "accepted": {
+        "values": {
+          "tileId": 5,
+          "suggestedName": "water_variant_5",
+          "description": "Offline fixture suggestion; review the actual image.",
+          "category": "animation_frame",
+          "tags": [
+            "water"
+          ],
+          "placementRole": "animation_frame",
+          "uncertaintyReason": "Review fragment/transition/animation context."
+        },
+        "facts": {
+          "tileId": 5,
+          "manual": {},
+          "className": "",
+          "hasCollisionGeometry": false,
+          "frames": [
+            {
+              "tileId": 5,
+              "duration": 150
+            },
+            {
+              "tileId": 6,
+              "duration": 150
+            }
+          ],
+          "animationMember": true,
+          "wang": []
+        },
+        "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+        "evidenceHash": "a40fd430428b65fc790d88de2b80a5f947226b44353feb6f03871f2f352ad243",
+        "provenance": {
+          "provider": "fake",
+          "model": "fixture-v1",
+          "version": "vision-1/preprocess-1/schema-1",
+          "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+          "configurationHash": "b0cc1f86352b5beb66b1e5fef25708566b13b9c5425c469d035eb3c53b1992a4",
+          "fields": {
+            "suggestedName": "reviewed",
+            "description": "reviewed",
+            "category": "reviewed",
+            "tags": "reviewed",
+            "placementRole": "reviewed",
+            "uncertaintyReason": "reviewed"
+          }
+        }
+      },
+      "proposed": {
+        "values": {
+          "tileId": 5,
+          "suggestedName": "water_variant_5",
+          "description": "Offline fixture suggestion; review the actual image.",
+          "category": "animation_frame",
+          "tags": [
+            "water"
+          ],
+          "placementRole": "animation_frame",
+          "uncertaintyReason": "Review fragment/transition/animation context."
+        },
+        "facts": {
+          "tileId": 5,
+          "manual": {},
+          "className": "",
+          "hasCollisionGeometry": false,
+          "frames": [
+            {
+              "tileId": 5,
+              "duration": 150
+            },
+            {
+              "tileId": 6,
+              "duration": 150
+            }
+          ],
+          "animationMember": true,
+          "wang": []
+        },
+        "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+        "evidenceHash": "a40fd430428b65fc790d88de2b80a5f947226b44353feb6f03871f2f352ad243",
+        "provenance": {
+          "provider": "fake",
+          "model": "fixture-v1",
+          "version": "vision-1/preprocess-1/schema-1",
+          "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+          "configurationHash": "b0cc1f86352b5beb66b1e5fef25708566b13b9c5425c469d035eb3c53b1992a4",
+          "fields": {
+            "suggestedName": "model",
+            "description": "model",
+            "category": "model",
+            "tags": "model",
+            "placementRole": "model",
+            "uncertaintyReason": "model"
+          }
+        }
+      }
+    },
+    {
+      "tileId": 6,
+      "state": "accepted",
+      "accepted": {
+        "values": {
+          "tileId": 6,
+          "suggestedName": "grass_variant_6",
+          "description": "Offline fixture suggestion; review the actual image.",
+          "category": "animation_frame",
+          "tags": [
+            "grass"
+          ],
+          "placementRole": "animation_frame",
+          "uncertaintyReason": "Review fragment/transition/animation context."
+        },
+        "facts": {
+          "tileId": 6,
+          "manual": {},
+          "className": "",
+          "hasCollisionGeometry": false,
+          "frames": [],
+          "animationMember": true,
+          "wang": []
+        },
+        "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+        "evidenceHash": "a40fd430428b65fc790d88de2b80a5f947226b44353feb6f03871f2f352ad243",
+        "provenance": {
+          "provider": "fake",
+          "model": "fixture-v1",
+          "version": "vision-1/preprocess-1/schema-1",
+          "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+          "configurationHash": "b0cc1f86352b5beb66b1e5fef25708566b13b9c5425c469d035eb3c53b1992a4",
+          "fields": {
+            "suggestedName": "reviewed",
+            "description": "reviewed",
+            "category": "reviewed",
+            "tags": "reviewed",
+            "placementRole": "reviewed",
+            "uncertaintyReason": "reviewed"
+          }
+        }
+      },
+      "proposed": {
+        "values": {
+          "tileId": 6,
+          "suggestedName": "grass_variant_6",
+          "description": "Offline fixture suggestion; review the actual image.",
+          "category": "animation_frame",
+          "tags": [
+            "grass"
+          ],
+          "placementRole": "animation_frame",
+          "uncertaintyReason": "Review fragment/transition/animation context."
+        },
+        "facts": {
+          "tileId": 6,
+          "manual": {},
+          "className": "",
+          "hasCollisionGeometry": false,
+          "frames": [],
+          "animationMember": true,
+          "wang": []
+        },
+        "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+        "evidenceHash": "a40fd430428b65fc790d88de2b80a5f947226b44353feb6f03871f2f352ad243",
+        "provenance": {
+          "provider": "fake",
+          "model": "fixture-v1",
+          "version": "vision-1/preprocess-1/schema-1",
+          "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+          "configurationHash": "b0cc1f86352b5beb66b1e5fef25708566b13b9c5425c469d035eb3c53b1992a4",
+          "fields": {
+            "suggestedName": "model",
+            "description": "model",
+            "category": "model",
+            "tags": "model",
+            "placementRole": "model",
+            "uncertaintyReason": "model"
+          }
+        }
+      }
+    },
+    {
+      "tileId": 7,
+      "state": "accepted",
+      "accepted": {
+        "values": {
+          "tileId": 7,
+          "suggestedName": "water_variant_7",
+          "description": "Offline fixture suggestion; review the actual image.",
+          "category": "object_fragment",
+          "tags": [
+            "water"
+          ],
+          "placementRole": "object_fragment",
+          "uncertaintyReason": "Review fragment/transition/animation context."
+        },
+        "facts": {
+          "tileId": 7,
+          "manual": {},
+          "className": "building-part",
+          "hasCollisionGeometry": false,
+          "frames": [],
+          "animationMember": false,
+          "wang": []
+        },
+        "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+        "evidenceHash": "0cd2358a77dd112ffdbd67db94fa0937361a8df2afa4ece9e483bed58d9fe05f",
+        "provenance": {
+          "provider": "fake",
+          "model": "fixture-v1",
+          "version": "vision-1/preprocess-1/schema-1",
+          "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+          "configurationHash": "b0cc1f86352b5beb66b1e5fef25708566b13b9c5425c469d035eb3c53b1992a4",
+          "fields": {
+            "suggestedName": "reviewed",
+            "description": "reviewed",
+            "category": "reviewed",
+            "tags": "reviewed",
+            "placementRole": "reviewed",
+            "uncertaintyReason": "reviewed"
+          }
+        }
+      },
+      "proposed": {
+        "values": {
+          "tileId": 7,
+          "suggestedName": "water_variant_7",
+          "description": "Offline fixture suggestion; review the actual image.",
+          "category": "object_fragment",
+          "tags": [
+            "water"
+          ],
+          "placementRole": "object_fragment",
+          "uncertaintyReason": "Review fragment/transition/animation context."
+        },
+        "facts": {
+          "tileId": 7,
+          "manual": {},
+          "className": "building-part",
+          "hasCollisionGeometry": false,
+          "frames": [],
+          "animationMember": false,
+          "wang": []
+        },
+        "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+        "evidenceHash": "0cd2358a77dd112ffdbd67db94fa0937361a8df2afa4ece9e483bed58d9fe05f",
+        "provenance": {
+          "provider": "fake",
+          "model": "fixture-v1",
+          "version": "vision-1/preprocess-1/schema-1",
+          "sourceHash": "4032760895af64c7cb8f538445caf01dd7ceeaf40dc9ca4a033e7a508ac08cdd",
+          "configurationHash": "b0cc1f86352b5beb66b1e5fef25708566b13b9c5425c469d035eb3c53b1992a4",
+          "fields": {
+            "suggestedName": "model",
+            "description": "model",
+            "category": "model",
+            "tags": "model",
+            "placementRole": "model",
+            "uncertaintyReason": "model"
+          }
+        }
+      }
+    }
+  ]
+}

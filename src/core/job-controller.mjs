@@ -3,21 +3,23 @@ import { JOB_LIMITS, JobError, safeJobError } from "./job-errors.mjs";
 /** @typedef {'idle'|'running'|'collecting'|'ready'|'failed'|'stale'|'cancelling'|'cancelled'} JobState */
 /** @typedef {import('./planner-protocol.mjs').PlannerRequest} Request */
 /** @typedef {{finished:()=>boolean, collect:()=>{exitCode:number,stdout:string,stderr:string}, dispose:(stop?:boolean)=>void}} Runner */
-/** @typedef {{startRunner:(request:Request)=>Runner, clock:()=>number, readCurrentContext:()=>string,
- * parseResponse:(output:ReturnType<Runner['collect']>,request:Request)=>import('./job-response.mjs').JobResult}} Dependencies */
+/** @template Q,R
+ * @typedef {{startRunner:(request:Q)=>Runner, clock:()=>number, readCurrentContext:()=>string,
+ * parseResponse:(output:ReturnType<Runner['collect']>,request:Q)=>R,timeoutMs?:number}} Dependencies */
 const transitions = /** @type {Record<JobState,JobState[]>} */ ({
   idle: ["running"], running: ["running", "collecting", "cancelling"],
   collecting: ["ready", "failed", "stale"], cancelling: ["cancelled"],
   ready: ["idle"], failed: ["idle"], stale: ["idle"], cancelled: ["idle"],
 });
 
+/** @template [Q=Request] @template [R=import('./job-response.mjs').JobResult] */
 export class JobController {
-  /** @param {Dependencies} dependencies */
+  /** @param {Dependencies<Q,R>} dependencies */
   constructor(dependencies) {
     this.dependencies = dependencies;
     /** @type {JobState} */ this.state = "idle";
-    /** @type {{request:Request, fingerprint:string, startedAtMs:number, runner:Runner|null}|null} */ this.job = null;
-    /** @type {import('./job-response.mjs').JobResult|null} */ this.result = null;
+    /** @type {{request:Q, fingerprint:string, startedAtMs:number, runner:Runner|null}|null} */ this.job = null;
+    /** @type {R|null} */ this.result = null;
     /** @type {JobError|null} */ this.error = null;
   }
   /** @param {JobState} next */
@@ -25,11 +27,11 @@ export class JobController {
     if (!transitions[this.state].includes(next)) throw new JobError("internal_error", "Invalid generation state transition.");
     this.state = next;
   }
-  /** @param {Request} request @param {string} fingerprint */
+  /** @param {Q} request @param {string} fingerprint */
   start(request, fingerprint) {
     if (this.state !== "idle") throw new JobError("still_running", "An AI generation job is already running.");
     // Own an independent snapshot, never the caller's mutable request.
-    const copy = /** @type {Request} */ (JSON.parse(JSON.stringify(request)));
+    const copy = /** @type {Q} */ (JSON.parse(JSON.stringify(request)));
     const startedAtMs = this.dependencies.clock();
     const runner = this.dependencies.startRunner(copy);
     this.job = { request: copy, fingerprint, startedAtMs, runner };
@@ -47,7 +49,7 @@ export class JobController {
     if (this.state !== "running" || !this.job || !this.job.runner) return this.state;
     try {
       if (!this.job.runner.finished()) {
-        if (this.elapsedMs() <= JOB_LIMITS.overdueMs) { this.transition("running"); return this.state; }
+        if (this.elapsedMs() <= (this.dependencies.timeoutMs || JOB_LIMITS.overdueMs)) { this.transition("running"); return this.state; }
         this.transition("collecting");
         this.release(true);
         throw new JobError("timeout", "Generation timed out. The map was not changed.");
