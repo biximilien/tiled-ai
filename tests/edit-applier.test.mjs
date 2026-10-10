@@ -5,7 +5,8 @@ import { readSelectionContext } from "../src/tiled/map-reader.mjs";
 import { planFillEmptyCells } from "../src/core/fill-empty-planner.mjs";
 import { registerActions } from "../src/tiled/actions.mjs";
 import { generateFromInstruction as startFromInstruction } from "../src/tiled/generate-action.mjs";
-import { checkGeneration, cancelGeneration, generationState } from "../src/tiled/job-lifecycle.mjs";
+import { checkGeneration, cancelGeneration, generationState, refreshReview, applyReview, regenerateReview } from "../src/tiled/job-lifecycle.mjs";
+import { previewHost, captureTool, activatePreview, deactivatePreview, previewKey } from "./helpers/preview-host.mjs";
 import { plannerHost } from "./helpers/planner-host.mjs";
 
 /** @param {import('node:test').TestContext} t @param {() => boolean} decide */
@@ -40,7 +41,7 @@ function modelDialog(t, decide) {
 /** @param {string} file */
 function generateFromInstruction(file) { startFromInstruction(file); checkGeneration(); }
 
-for (const accept of [false, true]) test(`AI confirmation uses plain text and ${accept ? "applies once" : "cancels without edits"}`, t => {
+for (const accept of [false, true]) test(`AI visual review uses plain text and ${accept ? "applies once" : "discards without edits"}`, t => {
   const f = fixture(t);
   const host = plannerHost(t); host.state.provider = "openai";
   f.metadata.ai_name = "grass";
@@ -52,8 +53,11 @@ for (const accept of [false, true]) test(`AI confirmation uses plain text and ${
   generateFromInstruction("main.mjs");
   assert.equal(dialog.body.readOnly, true);
   assert.match(dialog.body.plainText, /<img src='external'> & grass/);
-  assert.match(dialog.body.plainText, /2 tile edits\?\nLayer: Ground/);
-  assert.deepEqual(dialog.buttons, ["Apply", "Cancel"]);
+  assert.match(dialog.body.plainText, /2 tile edits\nLayer: Ground/);
+  assert.deepEqual(dialog.buttons, ["Apply (Enter over map)", "Discard", "Regenerate", "Review Status"]);
+  assert.ok(!f.calls.includes("edit"));
+  activatePreview();
+  if (accept) { applyReview(); applyReview(); } else cancelGeneration();
   assert.ok(host.state.request?.tileCatalog);
   assert.equal(f.calls.filter(call => call === "apply").length, accept ? 1 : 0);
   assert.doesNotThrow(() => host.collectGarbage());
@@ -78,9 +82,9 @@ test("AI summary approval still rechecks stale map state", t => {
   Object.defineProperty(host.state, "stdout", { get: () => JSON.stringify({ schemaVersion: 1,
     requestId: host.state.request?.requestId, plan: f.plan,
     metadata: { status: "planned", summary: "Grass", reason: null } }) });
-  modelDialog(t, () => { f.layer.locked = true; return true; });
   generateFromInstruction("main.mjs");
-  assert.match(f.alerts.pop() || "", /locked/);
+  activatePreview(); f.layer.locked = true; applyReview();
+  assert.match(f.ui.body.plainText, /locked/);
   assert.ok(!f.calls.includes("edit"));
 });
 
@@ -95,6 +99,7 @@ test("AI caps selection at 256 before reading cells or starting the child", t =>
 /** @param {import('node:test').TestContext} t */
 function fixture(t) {
   t.after(() => cancelGeneration());
+  previewHost(t);
   const ui = modelDialog(t, () => true);
   /** @type {string[]} */
   const calls = [];
@@ -106,6 +111,7 @@ function fixture(t) {
   const layer = {
     id: 3, name: "Ground", isTileLayer: true, locked: false, readOnly: false,
     parentLayer: /** @type {Layer | null} */ (null),
+    visible: true, opacity: 1, offset: { x: 0, y: 0 }, parallaxFactor: { x: 1, y: 1 },
     flagsAt() { return 0; },
     /** @param {number} x */
     tileAt(x) { return cells[x - 12]; },
@@ -140,6 +146,7 @@ function fixture(t) {
     isTileMap: true, width: 100, height: 80, tileWidth: 16, tileHeight: 16,
     infinite: false, readOnly: false,
     currentLayer: layer, layers: [layer], orientation: 0, tilesets: [tileset],
+    currentLayerChanged: signal(), regionEdited: signal(),
     selectedArea: { get: () => ({ rects: [selection] }) },
   };
   const map = /** @type {TileMap} */ (/** @type {unknown} */ (data));
@@ -153,6 +160,8 @@ function fixture(t) {
   /** @type {string[]} */
   const confirmations = [];
   const api = {
+    registerTool: captureTool,
+    activeAssetChanged: signal(),
     openAssets: [map],
     assetAboutToBeClosed: signal(), assetReloaded: signal(),
     activeAsset: /** @type {Asset | null} */ (map),
@@ -208,6 +217,9 @@ test("selection, active layer, layer name and outside cell changes do not invali
   f.cells[100] = f.tile; // outside captured x=12..14
   f.data.currentLayer = Object.assign({}, f.layer, { id: 8 });
   checkGeneration();
+  activatePreview(); applyReview();
+  assert.ok(!f.calls.includes("edit")); // changing layers hides review, but does not invalidate it
+  f.data.currentLayer = f.layer; refreshReview(); applyReview();
   assert.equal(generationState(), "idle");
   assert.equal(f.calls.filter(call => call === "apply").length, 1);
   assert.deepEqual(f.cells.slice(0, 3), [f.tile, f.tile, f.tile]);
@@ -220,6 +232,7 @@ test("switching maps retains ready result and asks user to return without switch
   assert.match(f.ui.body.plainText, /Return to the original map/);
   assert.equal(f.api.activeAsset, null); assert.ok(!f.calls.includes("edit"));
   f.api.activeAsset = f.map; checkGeneration();
+  activatePreview(); applyReview();
   assert.equal(generationState(), "idle"); assert.ok(f.calls.includes("apply"));
 });
 
@@ -256,8 +269,78 @@ test("context changes while ready on another map are rechecked before review", t
   const f = fixture(t); plannerHost(t); startFromInstruction("main.mjs");
   f.api.activeAsset = null; checkGeneration(); assert.equal(generationState(), "ready");
   f.cells[1] = f.tile; f.api.activeAsset = f.map; checkGeneration();
+  assert.equal(generationState(), "ready"); assert.ok(!f.calls.includes("edit"));
+  assert.match(f.ui.body.plainText, /target area or catalog changed/);
+});
+
+test("tool deactivation hides review; returning revalidates; Escape discards", t => {
+  const f = fixture(t); plannerHost(t); generateFromInstruction("main.mjs"); activatePreview();
+  deactivatePreview(); applyReview(); assert.ok(!f.calls.includes("edit"));
+  activatePreview(); assert.match(f.ui.body.plainText, /Preview shown/);
+  previewKey(0x01000000); assert.equal(generationState(), "idle"); assert.ok(!f.calls.includes("edit"));
+});
+
+test("hidden target disables Apply until visible again; Enter applies once", t => {
+  const f = fixture(t); plannerHost(t); generateFromInstruction("main.mjs");
+  f.layer.visible = false; activatePreview(); applyReview(); assert.ok(!f.calls.includes("edit"));
+  f.layer.visible = true; refreshReview(); previewKey(0x01000004); previewKey(0x01000004);
+  assert.equal(f.calls.filter(call => call === "apply").length, 1);
+});
+
+test("same tile ID resolving to another resource blocks Apply", t => {
+  const f = fixture(t); plannerHost(t); generateFromInstruction("main.mjs"); activatePreview();
+  const replacement = Object.assign({}, f.tile);
+  f.data.tilesets[0].tile = () => replacement;
+  applyReview(); assert.ok(!f.calls.includes("edit")); assert.match(f.ui.body.plainText, /resource changed/);
+});
+
+test("Regenerate uses original region and instruction with fresh contents, new ID, and one job", t => {
+  const f = fixture(t); const host = plannerHost(t); generateFromInstruction("main.mjs"); activatePreview();
+  const first = structuredClone(host.state.request);
+  f.selection.x = 90; f.cells[1] = f.tile; refreshReview();
+  regenerateReview(); regenerateReview();
+  assert.equal(generationState(), "running");
+  assert.equal(host.events.filter(event => event === "start").length, 2);
+  assert.notEqual(host.state.request?.requestId, first?.requestId);
+  assert.deepEqual(host.state.request?.context.selection, first?.context.selection);
+  assert.equal(host.state.request?.instruction, first?.instruction);
+  assert.equal(host.state.request?.context.cells[0][1]?.tileId, 4);
+  applyReview("obsolete"); assert.ok(!f.calls.includes("edit"));
+  host.state.stdout = "{broken"; checkGeneration(); assert.equal(generationState(), "failed");
+  assert.ok(!f.calls.includes("edit"));
+});
+
+test("review-window X removes preview without an edit and cannot clear a later session", t => {
+  const f = fixture(t); plannerHost(t); generateFromInstruction("main.mjs"); activatePreview();
+  const dialog = f.ui.dialogs[f.ui.dialogs.length - 1]; dialog.reject();
   assert.equal(generationState(), "idle"); assert.ok(!f.calls.includes("edit"));
-  assert.match(f.alerts.pop() || "", /target area or catalog changed/);
+  startFromInstruction("main.mjs"); dialog.reject(); assert.equal(generationState(), "running");
+});
+
+for (const event of ["assetAboutToBeClosed", "assetReloaded"]) test(`pending review is cleared on ${event}`, t => {
+  const f = fixture(t); plannerHost(t); generateFromInstruction("main.mjs"); activatePreview();
+  f.api[/** @type {'assetAboutToBeClosed'|'assetReloaded'} */ (event)].emit(f.map);
+  applyReview(); previewKey(0x01000004);
+  assert.equal(generationState(), "idle"); assert.ok(!f.calls.includes("edit"));
+});
+
+test("deleting the target after preview rejects Apply", t => {
+  const f = fixture(t); plannerHost(t); generateFromInstruction("main.mjs"); activatePreview();
+  f.data.layers.length = 0; applyReview();
+  assert.match(f.ui.body.plainText, /removed or replaced/); assert.ok(!f.calls.includes("edit"));
+});
+
+test("offset changes after preview reject Apply before editing", t => {
+  const f = fixture(t); plannerHost(t); generateFromInstruction("main.mjs"); activatePreview();
+  f.layer.offset.x = 16; applyReview();
+  assert.match(f.ui.body.plainText, /offsets or parallax/); assert.ok(!f.calls.includes("edit"));
+});
+
+test("no-op keeps its existing result even when preview geometry is unsupported", t => {
+  const f = fixture(t); plannerHost(t); f.data.orientation = 1; f.api.prompt = () => "noop";
+  generateFromInstruction("main.mjs");
+  assert.equal(generationState(), "idle"); assert.equal(f.logs.pop(), "No changes were proposed.");
+  assert.ok(!f.calls.includes("edit")); assert.deepEqual(f.alerts, []);
 });
 
 test("adapter resolves everything before one edit and one apply", t => {
@@ -339,7 +422,8 @@ test("Generate validates, confirms the count, then applies once", t => {
   assert.equal(generationState(), "running");
   assert.equal(f.calls.filter(call => call === "apply").length, 0);
   checkGeneration();
-  assert.deepEqual(f.confirmations, ["Apply 2 tile edits?"]);
+  assert.deepEqual(f.confirmations, []);
+  activatePreview(); applyReview();
   assert.equal(f.calls.filter(call => call === "apply").length, 1);
   host.collectGarbage();
   assert.equal(host.events[host.events.length - 1], "close");
@@ -361,6 +445,7 @@ test("Generate decline and noop never create an edit", t => {
   f.api.confirm = () => false;
   generateFromInstruction("main.mjs");
   assert.ok(!f.calls.includes("edit"));
+  cancelGeneration();
   f.api.prompt = () => "noop";
   f.api.confirm = () => { throw new Error("noop must not confirm"); };
   generateFromInstruction("main.mjs");
@@ -376,9 +461,9 @@ test("Generate rejects stale state before confirmation and again after approval"
   assert.deepEqual(f.confirmations, []);
   f.api.activeAsset = f.map;
   f.api.prompt = () => "fill empty";
-  f.api.confirm = () => { f.cells[1] = f.tile; return true; };
   generateFromInstruction("main.mjs");
-  assert.match(f.alerts.pop() || "", /target area or catalog changed/);
+  activatePreview(); f.cells[1] = f.tile; applyReview();
+  assert.match(f.ui.body.plainText, /target area or catalog changed/);
   assert.ok(!f.calls.includes("edit"));
 });
 
@@ -414,7 +499,8 @@ test("semantic Generate includes catalog only, validates and confirms ordinary e
     schemaVersion: 1, tilesets: [{ name: "terrain", tiles: [{ tileId: 4, name: "Grass", tags: ["ground", "outdoor"] }] }],
   });
   assert.ok(!("diagnostics" in host.state.request));
-  assert.deepEqual(f.confirmations, ["Apply 2 tile edits?"]);
+  assert.deepEqual(f.confirmations, []);
+  activatePreview(); applyReview();
   assert.equal(f.calls.filter(call => call === "apply").length, 1);
 });
 

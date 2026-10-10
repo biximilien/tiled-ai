@@ -9,7 +9,7 @@ planning remains the default and makes no network requests.
 **Map → AI: Fill Empty Cells (Prototype)** now uses a deterministic planner to
 fill selected empty cells with the most common tile in the selection.
 **Map → AI: Generate… (Prototype)** sends a supported instruction and selection
-to a one-shot local Node planner, then asks before applying its validated edits.
+to a one-shot local Node planner, then opens visual review before Apply.
 Tiles annotated with `ai_name` can now be selected by exact semantic name using
 `fill empty with grass` or `fill empty with terrain:grass`.
 
@@ -281,7 +281,9 @@ generation, use [OpenAI generation](#openai-generation-iteration-5) below.
 3. Enter one of the supported instructions below.
 4. Continue working while the non-modal status dialog stays open. Click
    **Check Status** to collect the result, or **Cancel** to stop the job.
-5. Review **Apply N tile edits?** and confirm to apply, or decline to cancel.
+5. Select the **AI Preview** toolbar tool and inspect the overlay on the original
+   map/layer. Press **Enter** over the map to Apply, or **Discard** in the review
+   window. See [visual tile review](#visual-tile-review-iteration-7) for controls.
 6. Read the result in **View → Views and Toolbars → Console**.
 
 The Console command is `tiled.trigger("TiledAiGenerate")`.
@@ -300,11 +302,11 @@ command router, not an AI model or arbitrary natural-language interpreter.
 The fill command keeps the existing tie-breaking rule and never overwrites tiles.
 
 The whole returned plan is validated, all tiles are resolved, and the original
-map/layer/captured region is checked before confirmation. Changing the current
-selection or active layer does not change the captured target. After confirmation, the
+map/layer/captured region is checked before review. Changing the current
+selection or active layer does not change the captured target. On Apply, the
 executor repeats validation and stale-state checks immediately before mutation.
-Declining applies nothing. Empty plans report **No changes were proposed** with
-no confirmation, edit, or modified marker. Accepted edits use the existing single
+Discard applies nothing. Empty plans report **No changes were proposed** with
+no review, edit, or modified marker. Accepted edits use the existing single
 undo step and never automatically save the map.
 
 ### Node discovery and junction installation
@@ -410,9 +412,9 @@ disposable map and the existing junction installation:
 2. Open the Console, select a writable tile layer, and select a rectangle with
    tiles and empty cells.
 3. Invoke **AI: Generate… (Prototype)**, enter `fill empty cells`, click
-   **Check Status**, and confirm when ready.
+   **Check Status**, select AI Preview, and press Enter over the map when ready.
 4. Verify only empty cells filled. Undo once, then redo once.
-5. Repeat and decline confirmation; verify nothing changes.
+5. Repeat and Discard; verify nothing changes.
 6. Enter `noop`, then blank input; verify neither creates an edit.
 7. Enter an unsupported instruction; verify a clear error and no changes.
 8. Launch a fresh Tiled with an invalid `TILED_AI_NODE` and verify the startup
@@ -426,7 +428,7 @@ disposable map and the existing junction installation:
 Annotations give the deterministic planner names such as `grass`, `water`, or
 `tree`. They do not enable fuzzy matching, automatic classification, or an AI
 model. Edit plans still use the existing `{ tileset, tileId }` references and
-pass through the same validator, confirmation, stale-state checks, and executor.
+pass through the same validator, visual review, stale-state checks, and executor.
 
 ### Annotate individual tiles
 
@@ -479,7 +481,7 @@ are read; source paths, image paths, and arbitrary custom properties are exclude
 Select a rectangle on a writable tile layer, invoke **AI: Generate… (Prototype)**,
 and enter `fill empty with grass`. Unlike frequency-based fill, this works even
 when the selection is entirely empty: the source tile comes from the catalog.
-Only empty cells are changed, after confirmation, in one undoable edit.
+Only empty cells are changed, after visual review and Apply, in one undoable edit.
 
 - Names are trimmed and their display casing is preserved. Lookup uses
   JavaScript Unicode `toLowerCase()` without accent removal or transliteration.
@@ -538,7 +540,8 @@ Use a disposable map with a referenced tileset named `terrain`:
 2. Return to the map, run **AI: Inspect Tile Catalog**, and check names, local
    IDs, normalized tags, and ignored counts in the Console.
 3. Select a rectangle with empty cells, generate `fill empty with grass`, and
-   confirm. Check that populated cells remain untouched; undo once, then redo.
+   inspect with AI Preview and press Enter over the map. Check that populated
+   cells remain untouched; undo once, then redo.
 4. Repeat with `fill empty with TERRAIN:GRASS`, then with an entirely empty area.
 5. Annotate a tile `grass` in another tileset. Verify unqualified lookup is
    ambiguous and `terrain:grass` still succeeds.
@@ -599,8 +602,8 @@ writable tile layer and choose **Map → AI: Generate… (Prototype)**.
 Enter, for example, `Create a small pond surrounded by grass.`
 
 **Generation is non-blocking as of iteration 6.** Use **Check Status** to collect
-the result or **Cancel** to stop it. The confirmation dialog opens only after
-collection and successful validation.
+the result or **Cancel** to stop it. Visual review opens only after
+collection and successful validation (see iteration 7 below).
 
 | Model-mode limit | Value |
 | --- | --- |
@@ -635,8 +638,9 @@ must have a reason and zero edits; this is also how the model reports that no
 changes are needed. Such results display a read-only explanation.
 
 For planned results, review the plain-text summary, edit count, and layer name,
-then choose **Apply** or **Cancel**. Apply rechecks the live map and uses one
-`TileLayerEdit`; **Ctrl+Z once** should undo the entire operation. Cancel,
+then inspect the AI Preview overlay and press **Enter** over the map to Apply,
+or choose **Discard**. Apply rechecks the live map and uses one
+`TileLayerEdit`; **Ctrl+Z once** should undo the entire operation. Discard,
 refusal, incomplete output, configuration/network/timeout failures, and rejected
 plans create no edit. Errors use conservative messages without raw provider
 responses, prompts, credentials, or headers. Model prose is never interpreted
@@ -650,8 +654,8 @@ as HTML or used to control execution.
 3. Choose **Map → AI: Generate… (Prototype)** and enter
    `Create a small pond surrounded by grass.`
 4. Click **Check Status** until ready. Check the summary, count, and layer;
-   choose **Cancel**. Verify no map change.
-5. Run again and choose **Apply**. Verify only selected empty cells change and
+   choose **Discard**. Verify no map change.
+5. Run again, select the AI Preview tool and press **Enter** over the map. Verify only selected empty cells change and
    every placed tile comes from the catalog. Repeat with an occupied cell to
    check it remains untouched.
 6. Press **Ctrl+Z once** and verify the entire generation disappears.
@@ -697,7 +701,7 @@ enter an instruction, and continue working. The status window is non-modal:
 - **Check Status / Check Again** checks once and returns immediately if running.
 - **Cancel**, or the window's **X**, stops a running job and releases it.
 - **Dismiss** clears a failed or stale job; **Discard** clears a ready result.
-- A completed, valid result opens the existing confirmation dialog. Nothing
+- A completed, valid result opens visual review (iteration 7 below). Nothing
   applies automatically. One Apply remains one undoable `TileLayerEdit`.
 
 There is no automatic status polling or desktop notification. Even if Node has
@@ -710,11 +714,11 @@ or dismissed. Jobs are not restored after restarting Tiled or reloading extensio
 Jobs capture the original map, tile layer and rectangle. You may change selection,
 select another layer, rename the target layer, edit cells outside that rectangle,
 pan, save, or switch maps while generation runs. None of these alone makes the
-result stale. If another map is active when the result arrives, the dialog asks
-you to return to the original map and click **Review Result**; it never switches
-maps silently.
+result stale. If another map is active when the result arrives, review asks
+you to return to the original map/layer and select the AI Preview tool; it never
+switches maps silently.
 
-Before confirmation and again before Apply, the extension compares a normalized
+Before review and again before Apply, the extension compares a normalized
 snapshot of the captured cells, their flip/rotation flags, map orientation and
 tile size, and any catalog sent to the planner (including metadata and name-to-ID
 resolution). Catalog and tag ordering are normalized. No context padding is sent
@@ -725,8 +729,8 @@ state, valid tiles and the whole numeric plan.
 Changing relevant contents or catalog data makes the result stale. Deleting or
 replacing the target layer also blocks application. Closing or reloading the
 target map cancels/discards the job and cleans up the process. A map lifecycle
-event during confirmation also prevents application. No automatic regeneration
-occurs; start a new job explicitly when ready.
+event during review also prevents application. No automatic regeneration
+occurs; use Regenerate explicitly to request a fresh plan for the original region.
 
 ### Deadlines, errors and Windows compatibility
 
@@ -801,21 +805,21 @@ Remove-Item Env:TILED_AI_TEST_MODE, Env:TILED_AI_FAKE_RESULT, Env:TILED_AI_FAKE_
 
 1. Start a delayed valid job. Pan/edit elsewhere and click Check Status before
    completion: it should report still running without freezing the editor.
-2. Check after completion, cancel confirmation once, then repeat and Apply.
+2. Check after completion, Discard review once, then repeat and Apply.
    Verify exactly one Undo restores all generated edits.
 3. Repeat while changing selection/current layer and editing outside the captured
    rectangle. Confirm the original region remains eligible for application.
 4. Repeat while editing a captured cell, flipping an existing tile, or changing a
    catalog annotation. Confirm a stale message, no generated edits, and Dismiss.
-5. Switch to another map before collecting. Verify Review Result asks you to
-   return; it must not switch maps or apply to the other map.
+5. Switch to another map before collecting. Verify visual review asks you to
+   return to the original map/layer; it must not switch maps or apply to the other map.
 6. Run `hang`. Cancel, then start a new job. Repeat using X. Both should stop
    promptly and leave the map untouched.
 7. Close/reload the target map during a delayed job; verify it cannot be applied.
    Delete the target layer during another job; collect and confirm it is stale.
 8. Try malformed/mismatched output and the timeout fixture. Verify no edits.
 9. Remove test mode before an optional live OpenAI check. Check responsiveness,
-   collection, declined confirmation, then Apply and one-step Undo.
+   collection, Discard, then preview, Apply and one-step Undo.
 
 ### Implementation report
 
@@ -846,7 +850,145 @@ and layer also completed a no-op after a layer rename (editor asset signals were
 supplied by a small fixture). No map files were saved or real API calls made.
 **Interactive responsiveness, Apply/Cancel and one-step editor Undo remain manual
 acceptance checks.** There are no automatic polls, persisted jobs, concurrent jobs,
-or previews; preview rendering is deferred to iteration 7.
+in iteration 6; visual review is added in iteration 7 below.
+
+## Visual tile review (iteration 7)
+
+### Generate, inspect, then apply
+
+1. Select a rectangular region on a writable tile layer. Use **Map → AI:
+   Generate… (Prototype)** and enter an instruction.
+2. Click **Check Status** to collect the result. A valid, nonempty plan opens
+   the non-modal **AI tile review** window with its summary, original layer,
+   and actual edit count. Empty results retain their existing no-change behavior.
+3. Return to that map and layer, select the **AI Preview** toolbar tool (the
+   blue/yellow squares icon), and move into the map viewport. The proposed tiles
+   appear at the original coordinates. Changing the selection does not move them.
+4. Inspect the overlay. Click the map to give it keyboard focus if needed;
+   clicking never paints or applies. Press **Enter** over the map to Apply.
+   Apply is the confirmation; there is no second confirmation dialog.
+5. **Discard**, review-window **X**, or **Escape** with the preview tool focused
+   removes the proposal without editing. **Regenerate** starts one fresh request
+   using the original instruction/rectangle and current cells/catalog.
+
+Tiled 1.11 hides native tool previews when the pointer leaves the viewport,
+including when it moves over the review dialog. Apply is disabled whenever the
+overlay is hidden. Consequently, **Enter over the focused map is the practical
+Apply control on 1.11**; the dialog's Apply button follows the same visibility
+guard. Leave/re-enter the viewport to resume inspection. **Review Status**
+rechecks the session without starting another planner.
+
+Switching tools, layers, or documents temporarily hides the proposal and disables
+Apply. Return to the original target and AI Preview tool to revalidate and resume.
+Only one job/review exists at a time. A new Generate directs you to finish that
+review. Closing/reloading its map clears it; extension reload restores nothing.
+
+The canonical numeric plan is copied and frozen. Preview and Apply share resolved
+tile resources; application re-resolves every reference and rejects replacements,
+even when a replacement has the same tile ID. Relevant cell/catalog changes,
+deleted layers, changed geometry, and locks invalidate review. Unrelated edits
+and selection changes do not retarget it. Hidden layers/groups disable Apply.
+Changes without a suitable native signal are caught on tool re-entry, Review
+Status, and immediately before application.
+
+Preview uses a detached sparse `TileMap`, never a temporary document layer. Apply
+uses the existing whole-plan validation and one fresh, nonmergeable live edit.
+An exception during live application is reported as potentially having changed
+the map; the extension never retries automatically or invokes a blind Undo.
+
+### Geometry and runtime decisions
+
+- Preview currently accepts orthogonal maps, existing finite/infinite-map bounds
+  and negative-coordinate rules, and the source map's tile dimensions.
+- Layer/group pixel offsets must be zero and parallax factors must be one.
+  Unsupported cases are rejected before live mutation.
+- Schema 1 only proposes untransformed `setTile` edits. Existing cell transforms
+  remain part of stale-context validation; no new transform support was added.
+- Absolute plan coordinates are written once into the detached layer; there is
+  no cursor-position translation. Unspecified cells remain absent.
+- Tiled **1.11.2 / Qt 6.8.1** is installed; development typings are **1.12.0**.
+  The tool is selected manually from the toolbar. The implementation does not
+  depend on the newer `selectedTool` setter. Clearing assigns `new TileMap()`;
+  assigning `null` is not supported.
+
+These choices use the [Tool API](https://www.mapeditor.org/docs/scripting/interfaces/Tool.html)
+and the installed-version implementations of
+[ScriptedTool](https://github.com/mapeditor/tiled/blob/v1.11.2/src/tiled/scriptedtool.cpp),
+[AbstractTileTool](https://github.com/mapeditor/tiled/blob/v1.11.2/src/tiled/abstracttiletool.cpp),
+and [BrushItem](https://github.com/mapeditor/tiled/blob/v1.11.2/src/tiled/brushitem.cpp).
+Source inspection supports the anchoring design; it does not substitute for
+viewport alignment tests.
+
+### Development 3 × 3 fixture and manual acceptance
+
+Fully exit Tiled and launch with the offline settings:
+
+```powershell
+$env:TILED_AI_PROVIDER = 'deterministic'
+$env:TILED_AI_TEST_MODE = '1'
+$env:TILED_AI_FAKE_RESULT = 'valid'
+$env:TILED_AI_FAKE_DELAY_MS = '0'
+& 'C:\Program Files\Tiled\tiled.exe'
+```
+
+Open `tests/fixtures/preview-fixture.tmx` with its adjacent BMP. Prefer a disposable
+copy of both files, retaining their filenames. Select **Preview target**, then
+**Map → AI: Preview 3x3 Fixture (Development)**. This action exists only in test
+mode and routes through the same offline job/validation/review workflow. It
+requests nine grass tiles at **x=12..14, y=8..10**, inside the blue tile border,
+independently of the current selection. Click Check Status and select AI Preview.
+No model is contacted. Undo prior fixture application before running it again.
+
+Manual acceptance still required:
+
+1. Move the cursor, pan, zoom, leave/re-enter, and switch tools. The nine green
+   tiles should stay inside the border at the same coordinates when visible.
+2. Preview and Discard must leave cells, saved file contents, dirty state, and
+   Undo history unchanged. Repeat after an unrelated unsaved edit; preserve it.
+3. Run again and press Enter to Apply. Check all nine cells against the preview.
+   Undo once must remove just those nine edits; Redo once must restore them.
+4. Switch tools, edit a target cell, and return: review must be stale. Repeat
+   with an outside cell edit: review should remain valid.
+5. Switch maps/layers and return; never show/apply the overlay on another target.
+   Repeat with a hidden/locked layer, removed target layer, and closed/reloaded map.
+6. Change the current selection before Regenerate. It must use the original
+   rectangle and fresh contents. Try Discard, X, Escape, and repeated Enter.
+7. Repeat normal Generate with multiple catalog tiles and non-square tile sizes.
+   Reject offsets/parallax and unsupported orientations clearly.
+
+### Implementation and verification
+
+- `src/core/review-controller.mjs`: canonical plan/resources, visibility, stale
+  state, guarded Apply/Discard, and no automatic retry after application errors.
+- `src/tiled/preview-builder.mjs`, `preview-tool.mjs`, `review-dialog.mjs`:
+  detached rendering, toolbar/key events, and non-modal controls.
+- `job-lifecycle.mjs`, `edit-applier.mjs`, and `main.mjs`: single-session
+  integration, asset signals, fresh regeneration, and final resource checks.
+- `preview-fixture.mjs`, `src/preview.svg`, `tests/fixtures/preview-fixture.*`,
+  and `scripts/preview-probe.mjs`: offline fixture, icon, and native structural probe.
+- Review-controller and adapter tests cover identity, sparse/nonzero/negative
+  coordinates, multiple resources, stale/hidden targets, cleanup and regeneration.
+
+The native structural probe passed on Tiled 1.11.2: all nine nonzero coordinates,
+unspecified-cell absence, copy-on-assignment, type-compatible clearing, stable
+tile-resource identity, a loaded fixture with real tile art, and canonical review
+creation/discard without source-cell changes. To repeat from the repository:
+
+```powershell
+& 'C:\Program Files\Tiled\tiled.exe' --evaluate scripts/preview-probe.mjs "$env:TEMP\tiled-ai-preview-probe.json"
+Get-Content "$env:TEMP\tiled-ai-preview-probe.json"
+```
+
+Regression results: **195 offline tests pass** (177 before this iteration).
+`npm run check`, `npx --yes --package typescript tsc --project jsconfig.json`,
+and `git diff --check` also pass.
+
+**Interactive viewport, pan/zoom, dirty-state, and editor Undo/Redo acceptance has
+not been performed.** Desktop automation failed to connect to its native pipe.
+The rendering milestone therefore remains partially verified; headless resource
+checks and mock tests cannot establish actual viewport behavior. In particular,
+the manual toolbar/Enter workflow needs confirmation in the editor. No live API
+request was made and no commit was created.
 
 ## Planned direction
 
@@ -859,7 +1001,7 @@ or previews; preview rendering is deferred to iteration 7.
 - **Iteration 4 (implemented):** semantic tile catalog and exact named-tile fills.
 - **Iteration 5 (implemented):** optional OpenAI semantic planning behind the process boundary.
 - **Iteration 6 (implemented):** non-blocking single-job workflow with cancellation and stale-result checks.
-- **Iteration 7:** preview rendering for ready, validated plans.
+- **Iteration 7 (implemented; viewport acceptance pending):** visual review for ready, validated plans.
 
 The extension stays thin. The local Node planner handles prompts, model access,
 and planning; the extension inspects maps, validates edits, and applies changes.

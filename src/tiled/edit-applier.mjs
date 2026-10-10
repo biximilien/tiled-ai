@@ -66,9 +66,13 @@ export function validateAndResolveEditPlan(plan, context, map, layer, checkCaptu
  * @param {unknown} plan @param {import('../core/edit-protocol.mjs').SelectionContext} context
  * @param {TileMap} map @param {TileLayer} layer
  * @param {() => void} [checkCapturedTarget]
+ * @param {{x:number,y:number,tile:Tile}[]} [expectedPlacements] Exact resources shown by visual review.
  */
-export function applyEditPlan(plan, context, map, layer, checkCapturedTarget) {
+export function applyEditPlan(plan, context, map, layer, checkCapturedTarget, expectedPlacements) {
   const resolved = validateAndResolveEditPlan(plan, context, map, layer, checkCapturedTarget);
+  if (expectedPlacements) requireValid(resolved.length === expectedPlacements.length && resolved.every((p, i) =>
+    p.x === expectedPlacements[i].x && p.y === expectedPlacements[i].y && p.tile === expectedPlacements[i].tile),
+  "A reviewed tile resource changed. Regenerate before applying.");
   if (!resolved.length) return 0;
 
   const edit = layer.edit();

@@ -9,14 +9,22 @@ import { buildTileCatalog, reportCatalog } from "./tile-catalog-reader.mjs";
 import { applyEditPlan, validateAndResolveEditPlan, requireWritableTarget } from "./edit-applier.mjs";
 import { generationDialog } from "./generation-dialog.mjs";
 import { showPlanDialog } from "./plan-dialog.mjs";
+import { ReviewController } from "../core/review-controller.mjs";
+import { serializePlannerRequest } from "../core/planner-protocol.mjs";
+import { buildPreview, requirePreviewGeometry, previewTargetVisible } from "./preview-builder.mjs";
+import { bindPreviewTool, previewToolActive, showPreview, clearPreview } from "./preview-tool.mjs";
+import { reviewDialog } from "./review-dialog.mjs";
 
 /** @typedef {import('../core/planner-protocol.mjs').PlannerRequest} Request */
-/** @typedef {{controller:JobController,map:TileMap,layer:TileLayer,dialog:ReturnType<typeof generationDialog>|null,disconnect:()=>void}} Session */
+/** @typedef {{controller:JobController,map:TileMap,layer:TileLayer,dialog:ReturnType<typeof generationDialog>|null,
+ * review:ReviewController|null, reviewUI:ReturnType<typeof reviewDialog>|null, unbind:()=>void, extensionFile:string, disconnect:()=>void}} Session */
 /** The only session-local job owner. Never restored after extension reload. @type {Session|null} */
 let session = null;
+let reviewCounter = 0;
 
 export function generationState() { return session ? session.controller.state : "idle"; }
 export function requireIdleGeneration() {
+  if (session && session.review) throw new JobError("still_running", "A tile review is pending. Use Apply, Discard, or Regenerate in AI tile review.");
   if (session) throw new JobError("still_running", "An AI generation job is already running.");
 }
 
@@ -52,6 +60,10 @@ export function readRelevantContext(map, layer, request) {
 function clearSession(current) {
   if (session !== current) return;
   current.disconnect();
+  if (current.review) current.review.discard(current.review.id);
+  current.unbind();
+  if (current.reviewUI) current.reviewUI.close();
+  current.review = null; current.reviewUI = null;
   if (current.dialog) current.dialog.close();
   current.dialog = null;
   current.controller.clear();
@@ -69,32 +81,84 @@ export function cancelGeneration() {
 /** @param {Session} current */
 function review(current) {
   if (session !== current || current.controller.state !== "ready" || !current.controller.result || !current.controller.job) return;
-  if (tiled.activeAsset !== current.map) {
-    if (current.dialog) current.dialog.render("The plan is ready. Return to the original map, then click Review Result. No map has been switched or changed.", "Review Result", "Discard");
-    return;
-  }
+  if (current.review) { refreshReview(); return; }
   const { plan, metadata } = current.controller.result;
   const context = current.controller.job.request.context;
   const guard = () => {
     if (session !== current) throw new JobError("target_closed", "The generation job is no longer available. The map was not changed.");
     current.controller.assertCurrent();
-    if (tiled.activeAsset !== current.map) throw new JobError("stale_context", "Return to the original map before applying. The map was not changed.");
     requireWritableTarget(current.map, current.layer);
+    if (plan.edits.length) requirePreviewGeometry(current.map, current.layer);
   };
   try {
     guard();
     validateAndResolveEditPlan(plan, context, current.map, current.layer, guard);
     if (current.dialog) current.dialog.close();
-    if (metadata && metadata.status === "cannot_plan") { showPlanDialog(`${metadata.summary}\n\n${metadata.reason}`, false); return; }
-    if (!plan.edits.length) { tiled.log("No changes were proposed."); return; }
-    const confirmed = metadata ? showPlanDialog(`${metadata.summary}\n\nApply ${plan.edits.length} tile edits?\nLayer: ${current.layer.name}`)
-      : tiled.confirm(`Apply ${plan.edits.length} tile edits?`);
-    if (!confirmed) return;
-    const count = applyEditPlan(plan, context, current.map, current.layer, guard);
-    tiled.log(`Applied ${count} tile edits. Use Ctrl+Z to undo.`);
+    if (metadata && metadata.status === "cannot_plan") { showPlanDialog(`${metadata.summary}\n\n${metadata.reason}`, false); clearSession(current); return; }
+    if (!plan.edits.length) { tiled.log("No changes were proposed."); clearSession(current); return; }
+    const id = `${current.controller.job.request.requestId}:review:${++reviewCounter}`;
+    current.review = new ReviewController(id, plan, context, {
+      validate: canonical => validateAndResolveEditPlan(canonical, context, current.map, current.layer, guard),
+      canShow: () => tiled.activeAsset === current.map && current.map.currentLayer === current.layer && previewToolActive(current.map) && previewTargetVisible(current.layer),
+      render: placements => showPreview(buildPreview(current.map, placements)), hide: clearPreview,
+      apply: (canonical, placements) => applyEditPlan(canonical, context, current.map, current.layer, guard, placements),
+    });
+    current.unbind = bindPreviewTool(() => { if (session === current) refreshReview(); },
+      () => { if (session === current) cancelGeneration(); }, () => applyReview(id));
+    current.reviewUI = reviewDialog(() => applyReview(id), () => { if (session === current) cancelGeneration(); },
+      () => regenerateReview(id), () => { if (session === current) refreshReview(); });
+    current.reviewUI.show();
+    refreshReview();
   } catch (error) {
     tiled.alert(error instanceof EditError ? error.message : safeJobError(error).message);
-  } finally { clearSession(current); }
+    clearSession(current);
+  }
+}
+
+export function refreshReview() {
+  const current = session;
+  if (!current || !current.review || !current.reviewUI) return;
+  const review = current.review;
+  review.refresh();
+  const summary = current.controller.result && current.controller.result.metadata ? current.controller.result.metadata.summary : "Review the proposed tile placements.";
+  const status = review.state === "stale" ? review.message : review.previewVisible ? "Preview shown. Press Enter over the map to Apply; Escape discards." : "Return to the original map and layer. Select the AI Preview toolbar tool and move over the map. Hidden layers must be made visible. Apply is disabled while the preview is hidden.";
+  const layerName = current.controller.job ? current.controller.job.request.context.layer.name : "Original layer";
+  current.reviewUI.render(`${summary}\n\n${review.plan.edits.length} tile edits\nLayer: ${layerName}\n\n${status}`, review.previewVisible && review.state === "reviewing");
+}
+
+/** @param {string} [id] */
+export function applyReview(id) {
+  const current = session;
+  if (!current || !current.review || (id !== undefined && id !== current.review.id)) return;
+  const review = current.review;
+  // The handler is synchronous: the state guard prevents duplicate/late Apply.
+  if (current.reviewUI) current.reviewUI.render("Validating before application…", false, false);
+  const count = review.apply(review.id);
+  if (review.state === "applied") { tiled.log(`Applied ${count} tile edits. Use Ctrl+Z to undo.`); clearSession(current); }
+  else if (review.state === "failed") { tiled.alert(review.message); clearSession(current); }
+  else refreshReview();
+}
+
+/** Original region/instruction, fresh data, new ID; prepare before discarding.
+ * @param {string} [id] */
+export function regenerateReview(id) {
+  const current = session;
+  if (!current || !current.review || !current.controller.job || (id !== undefined && id !== current.review.id)) return;
+  if (current.review.state !== "reviewing" && current.review.state !== "stale") return;
+  try {
+    const old = current.controller.job.request;
+    readRelevantContext(current.map, current.layer, old); // verifies asset/layer identity, without requiring the old fingerprint
+    requireWritableTarget(current.map, current.layer);
+    requirePreviewGeometry(current.map, current.layer);
+    const request = { schemaVersion: 1, requestId: `${Date.now()}-regenerate-${++reviewCounter}`, instruction: old.instruction,
+      context: readRegionContext(current.map, current.layer, old.context.selection) };
+    if (old.tileCatalog) Object.assign(request, { tileCatalog: reportCatalog(buildTileCatalog(current.map)) });
+    serializePlannerRequest(request);
+    clearSession(current);
+    startGeneration(request, current.map, current.layer, current.extensionFile);
+  } catch (error) {
+    tiled.alert(error instanceof Error ? error.message : "Could not regenerate. No new job was started.");
+  }
 }
 
 export function checkGeneration() {
@@ -117,7 +181,8 @@ export function startGeneration(request, map, layer, extensionFile) {
   const controller = new JobController({ startRunner: value => startPlanner(value, extensionFile),
     clock: () => Date.now(), readCurrentContext: () => readRelevantContext(map, layer, request), parseResponse: parseJobResponse });
   controller.start(request, fingerprint);
-  const current = { controller, map, layer, dialog: /** @type {ReturnType<typeof generationDialog>|null} */ (null), disconnect: () => {} };
+  /** @type {Session} */
+  const current = { controller, map, layer, dialog: null, review: null, reviewUI: null, unbind: () => {}, extensionFile, disconnect: () => {} };
   session = current;
   try {
     const invalidate = (/** @type {Asset} */ asset) => {
@@ -132,6 +197,13 @@ export function startGeneration(request, map, layer, extensionFile) {
     disconnectors.push(() => tiled.assetAboutToBeClosed.disconnect(invalidate));
     tiled.assetReloaded.connect(invalidate);
     disconnectors.push(() => tiled.assetReloaded.disconnect(invalidate));
+    const refresh = () => { if (session === current) refreshReview(); };
+    tiled.activeAssetChanged.connect(refresh);
+    disconnectors.push(() => tiled.activeAssetChanged.disconnect(refresh));
+    map.currentLayerChanged.connect(refresh);
+    disconnectors.push(() => map.currentLayerChanged.disconnect(refresh));
+    map.regionEdited.connect(refresh);
+    disconnectors.push(() => map.regionEdited.disconnect(refresh));
     current.dialog = generationDialog(() => { if (session === current) checkGeneration(); }, () => { if (session === current) cancelGeneration(); });
     const region = request.context.selection;
     current.dialog.render(`Creating a plan for ${region.width} × ${region.height} cells…\n\nThe map remains available while generation runs. Click Check Status to collect the result.`);
