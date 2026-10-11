@@ -572,6 +572,24 @@ Choose a model available to your account that supports Responses Structured Outp
 
 ### Windows configuration
 
+**Recommended: in Tiled, open Edit → AI: Settings…** Choose OpenAI, enter your
+model ID and API key, and click **Save**. The next generation or tileset analysis
+uses these settings immediately; no terminal or restart is needed. Finish or close
+any active AI job/review before changing settings.
+
+Provider and model are remembered. By default the key lasts only for the current
+Tiled session (reloads of the extension also clear it). To retain it across launches,
+choose **Save locally (unencrypted)**. Settings are stored outside your project at
+`%APPDATA%/tiled-ai/settings.json` on Windows. To remove a remembered key, choose
+**This Tiled session only** and Save; the key remains in memory until Tiled closes.
+Saved provider/model override environment settings; a blank key falls back to
+`OPENAI_API_KEY`. Cancel leaves settings unchanged. This dialog does not test the
+credentials or select a model automatically.
+
+For tileset analysis the model must support images and structured outputs.
+Node and the planner dependencies are still required. The optional terminal setup
+below works when no menu settings have been saved.
+
 Install the isolated Node planner dependencies:
 
 ```powershell
@@ -589,7 +607,7 @@ $env:OPENAI_MODEL = 'YOUR_RESPONSES_STRUCTURED_OUTPUTS_MODEL'
 
 Replace both placeholders locally. Launching a new window while an existing Tiled
 process is running may reuse that process's old environment. Fully exit first.
-The key is read only by Node from its inherited environment; it is never added
+The key is passed to Node through its process environment; it is never added
 to the Tiled request, process arguments, or diagnostics. `.env.example` is a
 reference template; **`.env` files are not automatically loaded** and are ignored
 by Git. Return to local mode by setting `$env:TILED_AI_PROVIDER = 'deterministic'`
@@ -1007,7 +1025,7 @@ Update the Node-only dependencies, then restart Tiled or reload extensions:
 npm ci --prefix planner
 ```
 
-Use the existing `TILED_AI_PROVIDER=openai`, `OPENAI_API_KEY`, and `OPENAI_MODEL`
+Use **Edit → AI: Settings…**, or the existing `TILED_AI_PROVIDER=openai`, `OPENAI_API_KEY`, and `OPENAI_MODEL`
 configuration. The configured model must support **image input and Responses
 Structured Outputs**. There is no automatic model substitution. Deterministic
 generation remains unchanged; real image analysis requires OpenAI mode. Explicit
@@ -1180,7 +1198,7 @@ describe the visually inspected synthetic tiles and accuracy/review-effort works
    unset `TILED_AI_TEST_MODE` and restart first. Record classification mistakes and
    correction time separately from test pass/fail.
 
-**Verification:** baseline 195 tests; **223 offline tests pass**. Syntax, TypeScript
+**Verification:** baseline 195 tests; **225 offline tests pass** (including settings-menu tests). Syntax, TypeScript
 and whitespace checks pass. Coverage includes crop pixels/gutters, alpha/color key,
 partial batches and explicit retries, cache/config/source invalidation, manual
 precedence, role eligibility, alias collisions, atomic-save failures/conflicts,

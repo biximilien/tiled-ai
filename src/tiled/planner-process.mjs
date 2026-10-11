@@ -3,10 +3,11 @@ import {
 } from "../core/planner-protocol.mjs";
 import { plannerProvider } from "../core/model-limits.mjs";
 import { JOB_LIMITS, JobError, TILED_SUCCESS_EXIT } from "../core/job-errors.mjs";
+import { applyAiSettings, configuredProvider } from "./ai-settings.mjs";
 
 // Read only a non-secret provider switch. Native GC owns this wrapper, too.
 export function usesModelPlanner() {
-  try { return plannerProvider(new Process().getEnv("TILED_AI_PROVIDER")) !== "deterministic"; }
+  try { return plannerProvider(configuredProvider(new Process())) !== "deterministic"; }
   catch (error) { throw new PlannerError("CONFIGURATION", "Unsupported TILED_AI_PROVIDER. Use deterministic or openai."); }
 }
 
@@ -78,6 +79,7 @@ export function startJsonProcess(input, args, host = {}) {
   }
   try {
     child.codec = "UTF-8";
+    applyAiSettings(child);
     const executable = child.getEnv("TILED_AI_NODE") || "node";
     if (!child.start(executable, args)) {
       throw new JobError("start_failed", "Could not start the AI planner. Check Node on PATH or TILED_AI_NODE. The map was not changed.");
